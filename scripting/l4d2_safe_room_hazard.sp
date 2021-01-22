@@ -20,6 +20,7 @@ v 1.0.1
 #pragma	semicolon 1
 #include <sourcemod>
 #include <sdktools>
+#include <sdkhooks>
 
 #define TEAM_SURVIVOR		2
 #define TEAM_INFECTED		3
@@ -29,34 +30,44 @@ v 1.0.1
 #define REFERENCE_2			"models/props_fairgrounds/alligator.mdl"
 #define REFERENCE_3			"models/props_fairgrounds/giraffe.mdl"
 #define TELEPORT_SND		"ui/menu_horror01.wav"
-#define DMG_GENERIC			0
+#define MDL_SENSOR			"models/props_doors/checkpoint_door_02.mdl"
 
 ConVar	g_hSafeHazard_Enable, g_hSafeHazard_Notify1, g_hSafeHazard_Notify2, g_hSafeHazard_Radius, g_hSafeHazard_Interval, g_hSafeHazard_Damage, g_hSafeHazard_Type, g_hSafeHazard_Msg,
 		g_hSafeHazard_Safe, g_hSafeHazard_Door, g_hSafeHazard_Toy, g_hSafeHazard_Tank;
 
-Handle g_hTimer_0				= INVALID_HANDLE;
-Handle g_hTimer_1				= INVALID_HANDLE;
-Handle g_hTimer_2				= INVALID_HANDLE;
-Handle g_hTimer_3				= INVALID_HANDLE;
-Handle g_hTimer_Effect			= INVALID_HANDLE;
-Handle g_hTimer_Force			= INVALID_HANDLE;
-Handle g_hTimer_SafeCheck		= INVALID_HANDLE;
 
-float	g_fInfoPos[3]			= { 0.0, 0.0, 0.0 };
-float	g_fInfoPos2[3]			= { 0.0, 0.0, 0.0 };
-float	g_fCampPos[3]			= { 0.0, 0.0, 0.0 };
-float	g_fRadius				= 0.0;
-float	g_fRadius2				= 0.0;
-bool	g_bStart				= false;
-bool	g_bFinale				= false;
-bool	g_bFind					= false;
-bool	g_bFound				= false;
-bool	g_bFound2				= false;
-bool	g_bPause				= false;
-bool	g_bSafeCheck			= false;
-bool	g_bEnter[MAXPLAYERS+1]	= { false, ... };
-int		g_iRescueDoor			= -1;
+enum
+{
+	TIMER_CLIENT,
+	TIMER_NOTIFY1,
+	TIMER_NOTIFY2,
+	TIMER_NOTIFY3,
+	TIMER_EFFECT,
+	TIMER_FORCE,
+	TIMER_SAFE,
+	TIMER_LENGTH
+}
 
+Handle g_hTimer[TIMER_LENGTH]		= { null, ... };
+float	g_fInfoPos[3]				= { 0.0, 0.0, 0.0 };
+float	g_fInfoPos2[3]				= { 0.0, 0.0, 0.0 };
+float	g_fCampPos[3]				= { 0.0, 0.0, 0.0 };
+float	g_fRadius					= 0.0;
+float	g_fRadius2					= 0.0;
+bool	g_bStart					= false;
+bool	g_bFinale					= false;
+bool	g_bFind						= false;
+bool	g_bFound					= false;
+bool	g_bFound2					= false;
+bool	g_bPause					= false;
+bool	g_bSafeCheck				= false;
+bool	g_bEnter[MAXPLAYERS+1]		= { false, ... };
+int		g_iSpawnDoor				= -1;
+int		g_iRescueDoor				= -1;
+
+int		g_iSpawnSensor[2]			= { -1, ... };
+int		g_iRescueSensor[2]			= { -1, ... };
+bool	g_bInsideRoom[MAXPLAYERS+1]	= { true, ... };
 
 // cvar
 bool	g_bCvar_Enable;
@@ -106,6 +117,7 @@ public void OnPluginStart()
 	HookEvent( "survivor_rescued",	EVENT_SurvivorRescued );
 
 	RegAdminCmd( "force_enter",	CommandForceEnter, ADMFLAG_GENERIC );
+	RegAdminCmd( "test",		CommandTest, ADMFLAG_GENERIC );
 	
 	g_hSafeHazard_Enable.AddChangeHook(	ConVar_Changed );
 	g_hSafeHazard_Notify1.AddChangeHook( ConVar_Changed );
@@ -121,6 +133,27 @@ public void OnPluginStart()
 	g_hSafeHazard_Tank.AddChangeHook( ConVar_Changed );
 	
 	UpdateCvar();
+}
+
+public void ConVar_Changed( Handle convar, const char[] oldValue, const char[] newValue )
+{
+	UpdateCvar();
+}
+
+void UpdateCvar()
+{
+	g_bCvar_Enable		= g_hSafeHazard_Enable.BoolValue;
+	g_fCvar_Notify1		= g_hSafeHazard_Notify1.FloatValue;
+	g_fCvar_Notify2		= g_hSafeHazard_Notify2.FloatValue;
+	g_fCvar_Radius		= g_hSafeHazard_Radius.FloatValue;
+	g_fCvar_Interval	= g_hSafeHazard_Interval.FloatValue;
+	g_iCvar_HPhit		= g_hSafeHazard_Damage.IntValue;
+	g_iCvar_Type		= g_hSafeHazard_Type.IntValue;
+	g_bCvar_Msg			= g_hSafeHazard_Msg.BoolValue;
+	g_iCvar_Safe		= g_hSafeHazard_Safe.IntValue;
+	g_iCvar_Door		= g_hSafeHazard_Door.IntValue;
+	g_bCvar_Toy			= g_hSafeHazard_Toy.BoolValue;
+	g_fCvar_Tank		= g_hSafeHazard_Tank.FloatValue;
 }
 
 public Action CommandForceEnter( int client, int args )
@@ -171,20 +204,70 @@ public Action CommandForceEnter( int client, int args )
 	return Plugin_Handled;
 }
 
+public Action CommandTest( int client, int args )
+{
+	if ( client < 1 )
+	{
+		ReplyToCommand( client, "[SAFEROOMHAZARD]: Command only valid in game!!" );
+		return Plugin_Handled;
+	}
+	
+	float eyePos[3];
+	float eyeAng[3];
+	GetClientEyePosition( client, eyePos );
+	GetClientEyeAngles( client, eyeAng );
+	
+	int entity = TraceRay_GetEntity( eyePos, eyeAng, client );
+	if( entity == -1 ) return Plugin_Handled;
+	
+	char nameClass[128];
+	GetEntityClassname( entity, nameClass, sizeof( nameClass ));
+	PrintToChatAll( "nameClass: %s", nameClass );
+		
+	char m_ModelName[PLATFORM_MAX_PATH];
+	GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof( m_ModelName ));
+	PrintToChatAll( "m_ModelName: %s", m_ModelName );
+	
+	/*
+	float output[3];
+	if( TraceRay_GetEndpoint( eyePos, eyeAng, client, output ))
+	{
+		eyeAng[0] = 0.0;
+		Create_DoorSensor( output, eyeAng, MDL_SENSOR );
+	}
+	*/
+	return Plugin_Handled;
+}
+
 public void OnMapStart()
 {
 	for ( int i = 1; i <= MAXPLAYERS; i++ )
 	{
-		g_bEnter[i]	= false;
+		g_bEnter[i]			= false;
+		g_bInsideRoom[i]	= true;
 	}
 	
-	g_hTimer_0			= INVALID_HANDLE;
-	g_hTimer_1			= INVALID_HANDLE;
-	g_hTimer_2			= INVALID_HANDLE;
-	g_hTimer_3			= INVALID_HANDLE;
-	g_hTimer_Effect		= INVALID_HANDLE;
-	g_hTimer_Force		= INVALID_HANDLE;
-	g_hTimer_SafeCheck	= INVALID_HANDLE;
+	for ( int i = 0; i < TIMER_LENGTH; i++ )
+	{
+		delete g_hTimer[i];
+		g_hTimer[i] = null;
+	}
+	
+	for ( int i = 0; i <= 2; i++ )
+	{
+		// reset dummy location reference
+		g_fInfoPos[i]	= 0.0;
+		g_fInfoPos2[i]	= 0.0;
+		g_fCampPos[i]	= 0.0;
+		
+		// reset door sensor reference
+		if( i < 2 )
+		{
+			g_iSpawnSensor[i] = -1;
+			g_iRescueSensor[i] = -1;
+		}
+	}
+	
 	g_fRadius			= 0.0;
 	g_fRadius2			= 0.0;
 	g_bStart			= false;
@@ -194,48 +277,27 @@ public void OnMapStart()
 	g_bFound2			= false;
 	g_bPause			= false;
 	g_bSafeCheck		= false;
+	g_iSpawnDoor		= -1;
 	g_iRescueDoor		= -1;
-	
-	for ( int i = 0; i <= 2; i++ )
-	{
-		g_fInfoPos[i]	= 0.0;
-		g_fInfoPos2[i]	= 0.0;
-		g_fCampPos[i]	= 0.0;
-	}
-	
+
 	PrecacheModel( REFERENCE_1 );
 	PrecacheModel( REFERENCE_2 );
 	PrecacheModel( REFERENCE_3 );
+	PrecacheModel( MDL_SENSOR );
 	PrecacheSound( TELEPORT_SND, true );
+}
+
+public void OnClientPutInServer( int client )
+{
+	if ( client > 0 )
+	{
+		g_bEnter[client] = false;
+	}
 }
 
 public void OnClientDisconnect( int client )
 {
-	if ( client > 0 )
-	{
-		g_bEnter[client]	= false;
-	}
-}
-
-public void ConVar_Changed( Handle convar, const char[] oldValue, const char[] newValue )
-{
-	UpdateCvar();
-}
-
-void UpdateCvar()
-{
-	g_bCvar_Enable		= g_hSafeHazard_Enable.BoolValue;
-	g_fCvar_Notify1		= g_hSafeHazard_Notify1.FloatValue;
-	g_fCvar_Notify2		= g_hSafeHazard_Notify2.FloatValue;
-	g_fCvar_Radius		= g_hSafeHazard_Radius.FloatValue;
-	g_fCvar_Interval	= g_hSafeHazard_Interval.FloatValue;
-	g_iCvar_HPhit		= g_hSafeHazard_Damage.IntValue;
-	g_iCvar_Type		= g_hSafeHazard_Type.IntValue;
-	g_bCvar_Msg			= g_hSafeHazard_Msg.BoolValue;
-	g_iCvar_Safe		= g_hSafeHazard_Safe.IntValue;
-	g_iCvar_Door		= g_hSafeHazard_Door.IntValue;
-	g_bCvar_Toy			= g_hSafeHazard_Toy.BoolValue;
-	g_fCvar_Tank		= g_hSafeHazard_Tank.FloatValue;
+	OnClientPutInServer( client );
 }
 
 public void EVENT_RoundEnd( Event event, const char[] name, bool dontBroadcast )
@@ -247,45 +309,10 @@ public void EVENT_RoundEnd( Event event, const char[] name, bool dontBroadcast )
 	g_bPause		= false;
 	g_bSafeCheck	= false;
 	
-	if ( g_hTimer_0 != INVALID_HANDLE )
+	for ( int i = 0; i < TIMER_LENGTH; i++ )
 	{
-		KillTimer( g_hTimer_0 );
-		g_hTimer_0	= INVALID_HANDLE;
-	}
-	if ( g_hTimer_1 != INVALID_HANDLE )
-	{
-		KillTimer( g_hTimer_1 );
-		g_hTimer_1	= INVALID_HANDLE;
-	}
-	
-	if ( g_hTimer_2 != INVALID_HANDLE )
-	{
-		KillTimer( g_hTimer_2 );
-		g_hTimer_2	= INVALID_HANDLE;
-	}
-	
-	if ( g_hTimer_3 != INVALID_HANDLE )
-	{
-		KillTimer( g_hTimer_3 );
-		g_hTimer_3	= INVALID_HANDLE;
-	}
-	
-	if ( g_hTimer_Effect != INVALID_HANDLE )
-	{
-		KillTimer( g_hTimer_Effect );
-		g_hTimer_Effect = INVALID_HANDLE;
-	}
-	
-	if ( g_hTimer_Force != INVALID_HANDLE )
-	{
-		KillTimer( g_hTimer_Force );
-		g_hTimer_Force = INVALID_HANDLE;
-	}
-	
-	if ( g_hTimer_SafeCheck != INVALID_HANDLE )
-	{
-		KillTimer( g_hTimer_SafeCheck );
-		g_hTimer_SafeCheck = INVALID_HANDLE;
+		delete g_hTimer[i];
+		g_hTimer[i] = null;
 	}
 	
 	for ( int i = 1; i <= MaxClients; i++ )
@@ -311,23 +338,61 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 	if ( !g_bCvar_Enable ) return;
 	
 	int client = GetClientOfUserId( event.GetInt( "userid" ));
-	if ( IsValidSurvivor( client ))
+	if ( Survivor_IsValid( client ))
 	{
+		//======== create spawn door sensor ========//
+		if( g_iSpawnDoor == -1 )
+		{
+			g_iSpawnDoor = Get_SaferoomDoor( client, true );
+			if( g_iSpawnDoor != -1 )
+			{
+				float pos[3];
+				float ang[3];
+				Get_EntityLocation( g_iSpawnDoor, pos, ang );
+				g_iSpawnSensor[0] = Create_DoorSensor( pos, ang, MDL_SENSOR );
+				
+				float radius = 10.0;
+				pos[0] -= radius * Cosine( DegToRad( ang[1] ));
+				pos[1] -= radius * Sine( DegToRad( ang[1] ));
+				g_iSpawnSensor[1] = Create_DoorSensor( pos, ang, MDL_SENSOR );
+			}
+		}
+		
+		//======== create rescue door sensor ========//
+		if( g_iRescueDoor == -1 )
+		{
+			g_iRescueDoor = Get_SaferoomDoor( client, false );
+			if( g_iRescueDoor != -1 )
+			{
+				float pos[3];
+				float ang[3];
+				Get_EntityLocation( g_iRescueDoor, pos, ang );
+				g_iRescueSensor[0] = Create_DoorSensor( pos, ang, MDL_SENSOR );
+
+				float radius = 10.0;
+				pos[0] -= radius * Cosine( DegToRad( ang[1] ));
+				pos[1] -= radius * Sine( DegToRad( ang[1] ));
+				g_iRescueSensor[1] = Create_DoorSensor( pos, ang, MDL_SENSOR );
+			}
+		}
+		
+		
+		
+		
+		
+		
+		
+		
 		// If player joint at mid game we halt the damage.
-		if ( !IsFakeClient( client ) && g_hTimer_3 != INVALID_HANDLE )
+		if ( !IsFakeClient( client ) && g_hTimer[TIMER_NOTIFY3] != null )
 		{
 			GetEntPropVector( client, Prop_Send, "m_vecOrigin", g_fCampPos );
 			if ( GetVectorDistance( g_fInfoPos, g_fCampPos ) <= ( g_fRadius + g_fCvar_Radius ))
 			{
-				g_bPause	= true;
+				g_bPause = true;
+				delete g_hTimer[TIMER_EFFECT];
 				
-				if ( g_hTimer_Effect != INVALID_HANDLE )
-				{
-					KillTimer( g_hTimer_Effect );
-					g_hTimer_Effect = INVALID_HANDLE;
-				}
-				
-				g_hTimer_Effect = CreateTimer( g_fCvar_Notify2, Timer_RestoreEffect, _, TIMER_FLAG_NO_MAPCHANGE );
+				g_hTimer[TIMER_EFFECT] = CreateTimer( g_fCvar_Notify2, Timer_RestoreEffect, _, TIMER_FLAG_NO_MAPCHANGE );
 				
 				if ( g_bCvar_Msg ) PrintToChat( client, "\x05[\x04WARNING\x05]: \x05You have \x04%0.0f \x05second(s) to leave safe room!!", g_fCvar_Notify2 );
 			}
@@ -348,45 +413,30 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 		{
 			// Look for idle player
 			if ( g_bCvar_Toy ) CreateReference( g_fInfoPos );
-			g_hTimer_0 = CreateTimer( 2.0, Timer_CheckClient, _, TIMER_FLAG_NO_MAPCHANGE );
+			g_hTimer[TIMER_CLIENT] = CreateTimer( 2.0, Timer_CheckClient, _, TIMER_FLAG_NO_MAPCHANGE );
 		}
 		
 		if ( g_bFound2 && g_iCvar_Safe > 0 )
 		{
 			// Start our saferoom teleport
 			if ( g_bCvar_Toy ) CreateReference( g_fInfoPos2 );
-			g_iRescueDoor = FindRescueDoor();
-			g_hTimer_SafeCheck = CreateTimer(( g_fCvar_Notify1 + g_fCvar_Notify2 ), Timer_EnableSafeCheck, _, TIMER_FLAG_NO_MAPCHANGE );
+			g_iRescueDoor = FindDoor();
+			g_hTimer[TIMER_SAFE] = CreateTimer(( g_fCvar_Notify1 + g_fCvar_Notify2 ), Timer_EnableSafeCheck, _, TIMER_FLAG_NO_MAPCHANGE );
 		}
 	}
 }
 
-public void EVENT_Finale( Event event, const char[] name, bool dontBroadcast )
+public Action Timer_RestoreEffect( Handle timer )
 {
-	if ( !g_bCvar_Enable ) return;
-	
-	g_bFinale = true;
-}
-
-public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast )
-{
-	if ( !g_bCvar_Enable || !g_bFound2 || !g_bSafeCheck || g_iCvar_Safe == 0 ) return;
-	
-	bool close = event.GetBool( "checkpoint" );
-	if ( close )
-	{
-		if ( g_hTimer_Force == INVALID_HANDLE )
-		{
-			g_hTimer_Force = CreateTimer( 1.0, Timer_CheckSafeStatus, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
-		}
-	}
+	g_bPause = false;
+	g_hTimer[TIMER_EFFECT] = null;
 }
 
 public Action Timer_CheckClient( Handle timer )
 {
 	for ( int i = 1; i <= MaxClients; i++ )
 	{
-		if ( IsClientInGame( i ) && IsFakeClient( i ))
+		if ( IsClientInGame( i ) && IsFakeClient( i ) && GetClientTeam( i ) == TEAM_SURVIVOR )
 		{
 			if ( GetHumanSpectator( i ) > 0 )
 			{
@@ -396,90 +446,9 @@ public Action Timer_CheckClient( Handle timer )
 	}
 	
 	//PrintToServer( "[SAFEROOMHAZARD]: Count down started!!" );
-	g_hTimer_1 = CreateTimer( g_fCvar_Notify1, Timer_Notify_1, _, TIMER_FLAG_NO_MAPCHANGE );
-	g_hTimer_0 = INVALID_HANDLE;
+	g_hTimer[TIMER_NOTIFY1] = CreateTimer( g_fCvar_Notify1, Timer_Notify_1, _, TIMER_FLAG_NO_MAPCHANGE );
+	g_hTimer[TIMER_CLIENT] = null;
 	return Plugin_Stop;
-}
-
-public Action Timer_CheckSafeStatus( Handle timer )
-{
-	int i;
-	float forPos[3];
-	bool condition = true;
-	
-	for ( i = 1; i <= MaxClients; i++ )
-	{
-		if ( g_bEnter[i] ) continue;
-		
-		if ( IsValidSurvivor( i ))
-		{
-			GetEntPropVector( i, Prop_Send, "m_vecOrigin", forPos );
-			if ( GetVectorDistance( g_fInfoPos2, forPos ) <= g_fRadius2 )
-			{
-				g_bEnter[i] = true;
-			}
-		}
-	}
-	
-	// check if all player have enter safe room at least once.
-	for ( i = 1; i <= MaxClients; i++ )
-	{
-		if ( IsValidSurvivor( i ))
-		{
-			if ( !g_bEnter[i] )
-			{
-				condition = false;
-				break;
-			}
-		}
-	}
-	
-	if ( condition )
-	{
-		g_fInfoPos2[2] += 2.0;	// Don't let player stuck on the floor.
-		
-		if ( g_iRescueDoor != -1 )
-		{
-			if ( g_iCvar_Door == 0 )
-			{
-				AcceptEntityInput( g_iRescueDoor, "Close" );
-			}
-			else
-			{
-				AcceptEntityInput( g_iRescueDoor, "Open" );
-			}
-		}
-		
-		for ( i = 1; i <= MaxClients; i++ )
-		{
-			if ( IsClientInGame( i ) && IsPlayerAlive( i ))
-			{
-				GetEntPropVector( i, Prop_Send, "m_vecOrigin", forPos );
-				if ( GetVectorDistance( g_fInfoPos2, forPos ) >= g_fRadius2 )
-				{
-					GetEntPropVector( i, Prop_Data, "m_angRotation", forPos );
-					TeleportEntity( i, g_fInfoPos2, forPos, NULL_VECTOR );
-					EmitSoundToClient( i, TELEPORT_SND );
-				}
-			}
-		}
-		
-		g_hTimer_Force = INVALID_HANDLE;
-		return Plugin_Stop;
-	}
-	return Plugin_Continue;
-}
-
-public Action Timer_RestoreEffect( Handle timer )
-{
-	g_bPause		= false;
-	g_hTimer_Effect = INVALID_HANDLE;
-}
-
-public Action Timer_EnableSafeCheck( Handle timer )
-{
-	g_bSafeCheck		= true;
-	g_hTimer_SafeCheck	= INVALID_HANDLE;
 }
 
 public Action Timer_Notify_1( Handle timer )
@@ -499,14 +468,14 @@ public Action Timer_Notify_1( Handle timer )
 			}
 		}
 	}
-	g_hTimer_1 = INVALID_HANDLE;
-	g_hTimer_2 = CreateTimer( g_fCvar_Notify2, Timer_Notify_2, _, TIMER_FLAG_NO_MAPCHANGE );
+	
+	g_hTimer[TIMER_NOTIFY1] = null;
+	g_hTimer[TIMER_NOTIFY2] = CreateTimer( g_fCvar_Notify2, Timer_Notify_2, _, TIMER_FLAG_NO_MAPCHANGE );
+	return Plugin_Stop;
 }
 
 public Action Timer_Notify_2( Handle timer )
 {
-	g_hTimer_2 = INVALID_HANDLE;
-	
 	int Tele = -1;
 	switch( g_iCvar_Type )
 	{
@@ -537,51 +506,280 @@ public Action Timer_Notify_2( Handle timer )
 		}
 	}
 	
-	g_hTimer_3 = CreateTimer( g_fCvar_Interval, Timer_Notify_3, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
+	g_hTimer[TIMER_NOTIFY2] = null;
+	g_hTimer[TIMER_NOTIFY3] = CreateTimer( g_fCvar_Interval, Timer_Notify_3, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
+	return Plugin_Stop;
 }
 
 public Action Timer_Notify_3( Handle timer )
 {
-	g_hTimer_2 = INVALID_HANDLE;
-	
-	if ( g_bFinale )
+	if ( !g_bFinale )
 	{
-		g_hTimer_3 = INVALID_HANDLE;
-		return Plugin_Stop;
-	}
-	
-	if ( g_bPause ) return Plugin_Continue;
-	
-	int i;
-	if ( g_fCvar_Tank > 0.0 )
-	{
-		for ( i = 1; i <= MaxClients; i++ )
+		if ( g_bPause ) return Plugin_Continue;
+		
+		int i;
+		if ( g_fCvar_Tank > 0.0 )
 		{
-			if( IsClientInGame( i ) && IsTank( i ))
+			for ( i = 1; i <= MaxClients; i++ )
 			{
-				GetEntPropVector( i, Prop_Send, "m_vecOrigin", g_fCampPos );
-				if ( GetVectorDistance( g_fInfoPos, g_fCampPos ) <= ( g_fRadius + g_fCvar_Tank ))
+				if( IsClientInGame( i ) && IsTank( i ))
 				{
-					return Plugin_Continue;
+					GetEntPropVector( i, Prop_Send, "m_vecOrigin", g_fCampPos );
+					if ( GetVectorDistance( g_fInfoPos, g_fCampPos ) <= ( g_fRadius + g_fCvar_Tank ))
+					{
+						return Plugin_Continue;
+					}
 				}
 			}
+		}
+		
+		for ( i = 1; i <= MaxClients; i++ )
+		{
+			if ( IsClientInGame( i ) && !IsFakeClient( i ) && IsPlayerAlive( i ) && GetClientTeam( i ) == TEAM_SURVIVOR )
+			{
+				GetEntPropVector( i, Prop_Send, "m_vecOrigin", g_fCampPos );
+				if ( GetVectorDistance( g_fInfoPos, g_fCampPos ) <= ( g_fRadius + g_fCvar_Radius ))
+				{
+					DealDamage( i, g_iCvar_HPhit, i, DMG_GENERIC, "" );
+				}
+			}
+		}
+		return Plugin_Continue;
+	}
+	g_hTimer[TIMER_NOTIFY3] = null;
+	return Plugin_Stop;
+}
+
+public Action Timer_EnableSafeCheck( Handle timer )
+{
+	g_bSafeCheck			= true;
+	g_hTimer[TIMER_SAFE]	= null;
+}
+
+
+
+
+
+public void EVENT_Finale( Event event, const char[] name, bool dontBroadcast )
+{
+	if ( !g_bCvar_Enable ) return;
+	
+	g_bFinale = true;
+}
+
+public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast )
+{
+	if ( !g_bCvar_Enable || !g_bFound2 || !g_bSafeCheck || g_iCvar_Safe == 0 ) return;
+	
+	bool close = event.GetBool( "checkpoint" );
+	if ( close )
+	{
+		if ( g_hTimer[TIMER_FORCE] == null )
+		{
+			g_hTimer[TIMER_FORCE] = CreateTimer( 1.0, Timer_CheckSafeStatus, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE );
+		}
+	}
+}
+
+public Action Timer_CheckSafeStatus( Handle timer )
+{
+	int i;
+	float forPos[3];
+	bool condition = true;
+	
+	for ( i = 1; i <= MaxClients; i++ )
+	{
+		if ( g_bEnter[i] ) continue;
+		
+		if ( Survivor_IsValid( i ))
+		{
+			GetEntPropVector( i, Prop_Send, "m_vecOrigin", forPos );
+			if ( GetVectorDistance( g_fInfoPos2, forPos ) <= g_fRadius2 )
+			{
+				g_bEnter[i] = true;
+			}
+		}
+	}
+	
+	// check if all player have enter safe room at least once.
+	for ( i = 1; i <= MaxClients; i++ )
+	{
+		if ( Survivor_IsValid( i ))
+		{
+			if ( !g_bEnter[i] )
+			{
+				condition = false;
+				break;
+			}
+		}
+	}
+	
+	if ( !condition )
+	{
+		return Plugin_Continue;
+	}
+	
+	g_fInfoPos2[2] += 2.0;	// Don't let player stuck on the floor.
+	
+	if ( g_iRescueDoor != -1 )
+	{
+		if ( g_iCvar_Door == 0 )
+		{
+			AcceptEntityInput( g_iRescueDoor, "Close" );
+		}
+		else
+		{
+			AcceptEntityInput( g_iRescueDoor, "Open" );
 		}
 	}
 	
 	for ( i = 1; i <= MaxClients; i++ )
 	{
-		if ( IsClientInGame( i ) && !IsFakeClient( i ) && IsPlayerAlive( i ) && GetClientTeam( i ) == TEAM_SURVIVOR )
+		if ( IsClientInGame( i ) && IsPlayerAlive( i ))
 		{
-			GetEntPropVector( i, Prop_Send, "m_vecOrigin", g_fCampPos );
-			if ( GetVectorDistance( g_fInfoPos, g_fCampPos ) <= ( g_fRadius + g_fCvar_Radius ))
+			GetEntPropVector( i, Prop_Send, "m_vecOrigin", forPos );
+			if ( GetVectorDistance( g_fInfoPos2, forPos ) >= g_fRadius2 )
 			{
-				DealDamage( i, g_iCvar_HPhit, i, DMG_GENERIC, "" );
+				GetEntPropVector( i, Prop_Data, "m_angRotation", forPos );
+				TeleportEntity( i, g_fInfoPos2, forPos, NULL_VECTOR );
+				EmitSoundToClient( i, TELEPORT_SND );
 			}
 		}
 	}
 	
+	g_hTimer[TIMER_FORCE] = null;
+	return Plugin_Stop;
+}
+
+
+
+
+
+int Create_DoorSensor( float pos[3], float ang[3], char[] model )
+{
+	int door = CreateEntityByName( "prop_dynamic_override" );
+	if( door == -1 ) return door;
+	
+	char entName[20];
+	Format( entName, sizeof( entName ), "srh%d", door );
+	DispatchKeyValue( door, "targetname", entName );
+	
+	DispatchKeyValueVector( door, "origin", pos );
+	DispatchKeyValueVector( door, "angles", ang );
+	DispatchKeyValue( door, "model", model );
+	SetEntPropFloat( door, Prop_Send,"m_flModelScale", 1.0 );
+	SetEntProp( door, Prop_Send, "m_usSolidFlags", 12 );
+	SetEntProp( door, Prop_Data, "m_nSolidType", 6 );
+	SetEntProp( door, Prop_Send, "m_CollisionGroup", 1 );
+	DispatchSpawn( door );
+	SetEntityRenderMode( door, RENDER_TRANSALPHA );
+	SetEntityRenderColor( door, 255, 255, 255, 100 );
+	
+	SDKHook( door, SDKHook_StartTouch, OnDoorStartTouch );
+	SDKHook( door, SDKHook_EndTouchPost, OnDoorEndTouch );
+	return door;
+}
+
+public Action OnDoorStartTouch( int entity, int other )
+{
+	if( !Survivor_IsValid( other )) return Plugin_Handled;
+	
+	PrintToChatAll( "Start touch %d", entity );
 	return Plugin_Continue;
 }
+
+public Action OnDoorEndTouch( int entity, int other )
+{
+	if( !Survivor_IsValid( other )) return Plugin_Handled;
+	
+	PrintToChatAll( "End touch %d", entity );
+	return Plugin_Continue;
+}
+
+int Get_SaferoomDoor( int client, bool spawn )
+{
+	float doorPos[3];
+	float playPos[3];
+	int entity = -1;
+	while (( entity = FindEntityByClassname( entity, "prop_door_rotating_checkpoint")) != -1)
+	{
+		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", doorPos );
+		GetEntPropVector( client, Prop_Send, "m_vecOrigin", playPos );
+		float distance = GetVectorDistance( playPos, doorPos );
+		if( spawn )
+		{
+			if ( distance <= 300.0 )
+			{
+				return entity;
+			}
+		}
+		else
+		{
+			if ( distance > 300.0 )
+			{
+				return entity;
+			}
+		}
+	}
+	return -1;
+}
+
+void Get_EntityLocation( int entity, float pos[3], float ang[3] )
+{
+	GetEntPropVector( entity, Prop_Send, "m_vecOrigin", pos );
+	GetEntPropVector( entity, Prop_Data, "m_angRotation", ang );
+}
+
+bool Survivor_IsValid( int client )
+{
+	return ( client > 0 && client <= MaxClients && IsClientInGame( client ) && GetClientTeam( client ) == TEAM_SURVIVOR );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+int FindDoor()
+{
+	float doorPos[3];
+	int ent = -1;
+	while (( ent = FindEntityByClassname( ent, "prop_door_rotating_checkpoint")) != -1)
+	{
+		GetEntPropVector( ent, Prop_Send, "m_vecOrigin", doorPos );
+		if ( GetVectorDistance( g_fInfoPos2, doorPos ) <= ( g_fRadius2 + 30.0 ))
+		{
+			return ent;
+		}
+	}
+	return -1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 bool FindEntityReference( float refPos[3] )
 {
@@ -1257,20 +1455,7 @@ void CreateReference( float myRef[3] )
 	}
 }
 
-int FindRescueDoor()
-{
-	float doorPos[3];
-	int ent = -1;
-	while (( ent = FindEntityByClassname( ent, "prop_door_rotating_checkpoint")) != -1)
-	{
-		GetEntPropVector( ent, Prop_Send, "m_vecOrigin", doorPos );
-		if ( GetVectorDistance( g_fInfoPos2, doorPos ) <= ( g_fRadius2 + 30.0 ))
-		{
-			return ent;
-		}
-	}
-	return -1;
-}
+
 
 // Because I love you.
 void DealDamage( int victim, int damage, int attacker = 0, int dmg_type = DMG_GENERIC, const char[] weapon )
@@ -1361,11 +1546,6 @@ void TeleportPlayer( int caller, int subject )
 	EmitSoundToClient( caller, TELEPORT_SND );
 }
 
-bool IsValidSurvivor( int client )
-{
-	return ( client > 0 && client <= MaxClients && IsClientInGame( client ) && GetClientTeam( client ) == TEAM_SURVIVOR );
-}
-
 bool IsTank( int client )
 {
 	return ( GetEntProp( client, Prop_Send, "m_zombieClass") == 8 );
@@ -1383,3 +1563,32 @@ int GetHumanSpectator( int bot )
 	return -1;
 }
 
+stock bool TraceRay_GetEndpoint( float trace_pos_start[3], float trace_ang_start[3], any data, float trace_pos_output[3] )
+{
+	bool havepos = false;
+	Handle trace = TR_TraceRayFilterEx( trace_pos_start, trace_ang_start, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceEntityFilterPlayers, data );
+	if( TR_DidHit( trace ))
+	{ 
+		TR_GetEndPosition( trace_pos_output, trace );
+		havepos = true;
+	}
+	delete trace;
+	return havepos;
+}
+
+stock int TraceRay_GetEntity( float trace_pos_start[3], float trace_ang_start[3], any data )
+{
+	int entity = -1;
+	Handle trace = TR_TraceRayFilterEx( trace_pos_start, trace_ang_start, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceEntityFilterPlayers, data );
+	if( TR_DidHit( trace ))
+	{ 
+		entity = TR_GetEntityIndex( trace );
+	}
+	delete trace;
+	return entity;
+}
+
+stock bool TraceEntityFilterPlayers( int entity, int contentsMask, any data )
+{
+	return ( entity > MaxClients && entity != data );
+}
