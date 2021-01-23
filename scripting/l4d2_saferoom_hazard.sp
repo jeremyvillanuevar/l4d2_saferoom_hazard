@@ -1,16 +1,12 @@
 #define PLUGIN_VERSION "1.1.0"
 /*
-================== todo ===================
-take damage when they refuse to enter the second saferoom
-
-
 ============= version history =============
 v 1.1.0
 - plugins conversion to new syntax.
 - changed command for force enter.
 - change detection from radius to sdkhook sensor.
 - renaming cvar
-
+- added damage for checkpoint area if player refuse to enter
 
 
 
@@ -44,9 +40,10 @@ v 1.0.1
 
 
 //======== Global ConVar ========//
-ConVar	g_ConVarSafeHazard_PluginEnable,		g_ConVarSafeHazard_NotifySpawn1,	g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,	g_ConVarSafeHazard_DamageAlive,
-		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,		g_ConVarSafeHazard_EventNumber,		g_ConVarSafeHazard_CmdDoor,	g_ConVarSafeHazard_ReferanceToy,
-		g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_ExitMsg, 		g_ConVarSafeHazard_IsDebugging;
+ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
+		g_ConVarSafeHazard_DamageIncap,		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,		g_ConVarSafeHazard_EventNumber,	g_ConVarSafeHazard_CmdDoor,
+		g_ConVarSafeHazard_ReferanceToy,	g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_ExitMsg, 		g_ConVarSafeHazard_IsDebugging;
+
 
 //========== Global Cvar ========//
 bool	g_bCvar_PluginEnable;
@@ -55,6 +52,7 @@ int		g_iCvar_NotifySpawn2;
 int		g_iCvar_Notify_Total;
 float	g_fCvar_Radius;
 int		g_iCvar_DamageAlive;
+int		g_iCvar_DamageIncap;
 bool	g_bCvar_LeaveSpawnMsg;
 bool	g_bCvar_EventDoorWin;
 int		g_iCvar_DoorNumber;
@@ -64,16 +62,19 @@ float	g_fCvar_CheckpoinCountdown;
 bool	g_bCvar_NotifyExit;
 bool	g_bCvar_IsDebugging;
 
-//==== Spawn Door Sensor Type ====//
-#define DOOR_ENTER				0
-#define DOOR_EXIT				1
-int		g_iDoorSensorType[2]	= { -1, ... };
+
+//== Spawn Door Area Sensor Type ==//
+#define SENSOR_ENTER			0
+#define SENSOR_EXIT				1
+int 	g_iDoorSensorType[2]	= { -1, ... };
+
 
 //========== Door Model =========//
 #define DOOR_HANDSIDE_RIGHT		0
 #define DOOR_HANDSIDE_LEFT		1
 #define DOOR_HANDSIDE_LENGTH	2
-char	g_sDoorModel[][] = {
+char g_sDoorModel[][] =
+{
 	// right handside model
 	"models/props_doors/checkpoint_door_-01.mdl",
 	"models/props_doors/checkpoint_door_02.mdl",
@@ -82,28 +83,33 @@ char	g_sDoorModel[][] = {
 	"models/props_doors/checkpoint_door_01.mdl"
 };
 
+
 //========= Dummy Model =========//
-enum	{
+enum
+{
 	MDL_REFERANCE1,
 	MDL_REFERANCE2,
 	MDL_REFERANCE3,
 	MDL_SENSOR,
 	MDL_LENGTH,
 }
-char	g_sSpawnModel[MDL_LENGTH][] = {
+char g_sSpawnModel[MDL_LENGTH][] =
+{
 	"models/props_fairgrounds/elephant.mdl",
 	"models/props_fairgrounds/alligator.mdl",
 	"models/props_fairgrounds/giraffe.mdl",
 	"models/props_doors/checkpoint_door_02.mdl"
 };
 
+
 //======== Global Timer =========//
-enum	{
+enum {
 	TIMER_GLOBAL,
 	TIMER_RESCUE,
 	TIMER_LENGTH
 }
 Handle g_hTimer[TIMER_LENGTH];
+
 
 //== Client Last Door Touched ===//
 enum	{
@@ -112,7 +118,8 @@ enum	{
 	ROOM_STATE_RESCUE,
 	ROOM_STATE_LENGTH
 }
-int		g_iSaferoomState[MAXPLAYERS+1];
+int g_iSaferoomState[MAXPLAYERS+1];
+
 
 //========= Spawn damage ========//
 int		g_iSpawnCount[MAXPLAYERS+1];
@@ -120,11 +127,13 @@ float	g_fSpawnPos[3];
 int		g_iSpawnDoor		= -1;
 int		g_iSpawnRef			= -1;
 
+
 //====== Checkpoint damage ======//
 float	g_fRescuePos[3];
 bool	g_bRescueDamage;
 int		g_iRescueDoor		= -1;
 int		g_iRescueRef		= -1;
+
 
 //========= Misc check ==========//
 bool	g_bIsFinale;
@@ -148,7 +157,8 @@ public void OnPluginStart()
 	g_ConVarSafeHazard_NotifySpawn1			= CreateConVar( "hazard_notify_leave1",		"30",	"Timer first notify to player to leave safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
 	g_ConVarSafeHazard_NotifySpawn2			= CreateConVar( "hazard_notify_leave2",		"10",	"Timer damage countdown after 'hazard_notify_leave1'", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
 	g_ConVarSafeHazard_Radius				= CreateConVar( "hazard_checkpoint_radius",	"300",	"Player distance from checkpoint door consider near.", FCVAR_SPONLY|FCVAR_NOTIFY);
-	g_ConVarSafeHazard_DamageAlive			= CreateConVar( "hazard_damage_alive",		"1",	"How much HP we knock on player per hit.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
+	g_ConVarSafeHazard_DamageAlive			= CreateConVar( "hazard_damage_alive",		"1",	"Health we knock off player per hit if he alive.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
+	g_ConVarSafeHazard_DamageIncap			= CreateConVar( "hazard_damage_incap",		"10",	"Health we knock off player per hit if he incap.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
 	g_ConVarSafeHazard_LeaveSpawnMsg		= CreateConVar( "hazard_leave_message",		"1",	"0:Off  | 1:On, Announce spawn saferoom damage message.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_EventDoor			= CreateConVar( "hazard_manual_safe",		"0",	"0:Off  | 1:On, Checkpoint door manually closed, all player force teleport inside.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_EventNumber			= CreateConVar( "hazard_manual_number",		"3",	"0:Off  | 1:On, Checkpoint door manually closed, this number of players inside checkpoint will force teleport all players", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 64.0 );
@@ -180,6 +190,7 @@ public void OnPluginStart()
 	g_ConVarSafeHazard_NotifySpawn2.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_Radius.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_DamageAlive.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_DamageIncap.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_LeaveSpawnMsg.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_EventDoor.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_EventNumber.AddChangeHook( ConVar_Changed );
@@ -204,6 +215,7 @@ void UpdateCvar()
 	g_iCvar_NotifySpawn2		= g_ConVarSafeHazard_NotifySpawn2.IntValue;
 	g_fCvar_Radius				= g_ConVarSafeHazard_Radius.FloatValue;
 	g_iCvar_DamageAlive			= g_ConVarSafeHazard_DamageAlive.IntValue;
+	g_iCvar_DamageIncap			= g_ConVarSafeHazard_DamageIncap.IntValue;
 	g_bCvar_LeaveSpawnMsg		= g_ConVarSafeHazard_LeaveSpawnMsg.BoolValue;
 	g_bCvar_EventDoorWin		= g_ConVarSafeHazard_EventDoor.BoolValue;
 	g_iCvar_DoorNumber			= g_ConVarSafeHazard_EventNumber.IntValue;
@@ -595,11 +607,11 @@ void SpawnSaferoomSensor( int client )
 				buf[1] -= DIST_SENSOR * Sine( DegToRad( ang[1] ));
 			}
 			
-			g_iDoorSensorType[DOOR_ENTER] = Create_SensorModel( buf, ang, g_sSpawnModel[MDL_SENSOR], 0 );
-			if( g_iDoorSensorType[DOOR_ENTER] != -1 )
+			g_iDoorSensorType[SENSOR_ENTER] = Create_SensorModel( buf, ang, g_sSpawnModel[MDL_SENSOR], 0 );
+			if( g_iDoorSensorType[SENSOR_ENTER] != -1 )
 			{
-				SDKHook( g_iDoorSensorType[DOOR_ENTER], SDKHook_StartTouch, OnDoorSensorTouch );
-				SDKHook( g_iDoorSensorType[DOOR_ENTER], SDKHook_EndTouch, OnDoorSensorTouch );
+				SDKHook( g_iDoorSensorType[SENSOR_ENTER], SDKHook_StartTouch, OnDoorSensorTouch );
+				SDKHook( g_iDoorSensorType[SENSOR_ENTER], SDKHook_EndTouch, OnDoorSensorTouch );
 			}
 			
 			
@@ -616,11 +628,11 @@ void SpawnSaferoomSensor( int client )
 				buf[1] += DIST_SENSOR * Sine( DegToRad( ang[1] ));
 			}
 			
-			g_iDoorSensorType[DOOR_EXIT] = Create_SensorModel( buf, ang, g_sSpawnModel[MDL_SENSOR], 0 );
-			if( g_iDoorSensorType[DOOR_EXIT] != -1 )
+			g_iDoorSensorType[SENSOR_EXIT] = Create_SensorModel( buf, ang, g_sSpawnModel[MDL_SENSOR], 0 );
+			if( g_iDoorSensorType[SENSOR_EXIT] != -1 )
 			{
-				SDKHook( g_iDoorSensorType[DOOR_EXIT], SDKHook_StartTouch, OnDoorSensorTouch );
-				SDKHook( g_iDoorSensorType[DOOR_EXIT], SDKHook_EndTouch, OnDoorSensorTouch );
+				SDKHook( g_iDoorSensorType[SENSOR_EXIT], SDKHook_StartTouch, OnDoorSensorTouch );
+				SDKHook( g_iDoorSensorType[SENSOR_EXIT], SDKHook_EndTouch, OnDoorSensorTouch );
 			}
 			
 			
@@ -725,7 +737,7 @@ public Action OnDoorSensorTouch( int entity, int client )
 	if( !Survivor_IsValid( client )) return Plugin_Continue;
 	
 	//========= spawn saferoom sensor logic =========//
-	if( entity == g_iDoorSensorType[DOOR_ENTER] )
+	if( entity == g_iDoorSensorType[SENSOR_ENTER] )
 	{
 		if( g_iSaferoomState[client] != ROOM_STATE_SPAWN )
 		{
@@ -736,7 +748,7 @@ public Action OnDoorSensorTouch( int entity, int client )
 			}
 		}
 	}
-	else if( entity == g_iDoorSensorType[DOOR_EXIT] )
+	else if( entity == g_iDoorSensorType[SENSOR_EXIT] )
 	{
 		if( g_iSaferoomState[client] != ROOM_STATE_OUTSIDE )
 		{
@@ -767,7 +779,19 @@ public Action Timer_Global( Handle timer )
 				// checkpoint area damage
 				if( g_iSaferoomState[i] != ROOM_STATE_RESCUE )
 				{
-					DealDamage( i, i, g_iCvar_DamageAlive, DMG_GENERIC, "" );
+					// survivor has no attacker, continue damag.
+					if( !Survivor_IsPinned( i ))
+					{
+						// incap or ledge, kill him even faster.
+						if( Survivor_IsHopeless( i ))
+						{
+							DealDamage( i, i, g_iCvar_DamageIncap, DMG_GENERIC, "" );
+						}
+						else
+						{
+							DealDamage( i, i, g_iCvar_DamageAlive, DMG_GENERIC, "" );
+						}
+					}
 				}
 			}
 			else
@@ -813,7 +837,19 @@ public Action Timer_Global( Handle timer )
 				{
 					if( g_iSaferoomState[i] == ROOM_STATE_SPAWN )
 					{
-						DealDamage( i, i, g_iCvar_DamageAlive, DMG_GENERIC, "" );
+						// survivor has no attacker, continue damag.
+						if( !Survivor_IsPinned( i ))
+						{
+							// incap or ledge, kill him even faster.
+							if( Survivor_IsHopeless( i ))
+							{
+								DealDamage( i, i, g_iCvar_DamageIncap, DMG_GENERIC, "" );
+							}
+							else
+							{
+								DealDamage( i, i, g_iCvar_DamageAlive, DMG_GENERIC, "" );
+							}
+						}
 					}
 				}
 			}
@@ -966,6 +1002,21 @@ bool Survivor_IsValid( int client )
 bool Survivor_InGame( int client )
 {
 	return ( IsClientInGame( client ) && IsPlayerAlive( client ) && !IsFakeClient( client ) && GetClientTeam( client ) == TEAM_SURVIVOR );
+}
+
+bool Survivor_IsHopeless( int client )
+{
+	return ( GetEntProp( client, Prop_Send, "m_isIncapacitated" ) == 1 || GetEntProp( client, Prop_Send, "m_isHangingFromLedge" ) == 1 );
+}
+
+bool Survivor_IsPinned( int client )
+{
+	return
+	( 
+		GetEntProp( client, Prop_Send, "m_tongueOwner" ) 		> 0 || 
+		GetEntPropEnt( client, Prop_Send, "m_pounceAttacker" )	> 0 || 
+		GetEntPropEnt( client, Prop_Send, "m_jockeyAttacker" )	> 0
+	);
 }
 
 
