@@ -198,7 +198,7 @@ bool	g_bIsRound_Finale;
 bool	g_bIsFindDoorInit;
 bool	g_bStateJump[MAXPLAYERS+1];
 char 	g_sCurrentMap[PLATFORM_MAX_PATH];
-Handle 	g_hStopSound[MAXPLAYERS+1];
+bool 	g_bIsPlaySound[MAXPLAYERS+1];
 int 	g_iBloodSprite;
 
 
@@ -240,6 +240,8 @@ public void OnPluginStart()
 	HookEvent( "door_close",				EVENT_DoorClose );
 	HookEvent( "player_left_start_area",	EVENT_PlayerLeft );
 	HookEvent( "player_death",				Event_PlayerDeath );
+	HookEvent( "bot_player_replace",		Event_PlayerReplace );
+	HookEvent( "player_bot_replace",		Event_PlayerReplace );
 
 	//================= Admin and developer command =================//
 	RegAdminCmd( "srh_enter",	Command_ForceEnter_CheckpointRoom, ADMFLAG_GENERIC );
@@ -304,7 +306,7 @@ void UpdateCvar()
 	g_iCvar_BloodColor[0] = StringToInt( colorName[0] );
 	g_iCvar_BloodColor[1] = StringToInt( colorName[1] );
 	g_iCvar_BloodColor[2] = StringToInt( colorName[2] );
-	g_iCvar_BloodColor[3] = 50;
+	g_iCvar_BloodColor[3] = 100;
 }
 
 public Action Command_ForceEnter_CheckpointRoom( int client, int args )
@@ -409,6 +411,8 @@ public Action Command_ForceEnter_Saferoom( int client, int args )
 		{
 			if ( IsClientInGame( i ) && IsPlayerAlive( i ) && GetClientTeam( i ) == TEAM_SURVIVOR )
 			{
+				g_iStateRoom[i]	= g_iStateRoom[client];
+				StopBurningSound( i );
 				TeleportPlayer( i, pos, SND_TELEPORT );
 			}
 		}
@@ -496,10 +500,9 @@ public void OnClientPutInServer( int client )
 {
 	if ( client > 0 )
 	{
-		g_iStateRoom[client] = -1;
-		g_bStateJump[client] = false;
-		
-		delete g_hStopSound[client];
+		g_iStateRoom[client] 	= -1;
+		g_bStateJump[client] 	= false;
+		g_bIsPlaySound[client] 	= false;
 	}
 }
 
@@ -536,7 +539,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			int count;
 			for( int i = 1; i <= MaxClients; i++ )
 			{
-				if( !IsFakeClient( i ) && g_iStateRoom[i] == ROOM_STATE_RESCUE )
+				if( Survivor_InGame( i ) && !IsFakeClient( i ) && g_iStateRoom[i] == ROOM_STATE_RESCUE )
 				{
 					count++;
 				}
@@ -592,6 +595,32 @@ public void Event_PlayerDeath( Event event, const char[] name, bool dontBroadcas
 	}
 }
 
+public void Event_PlayerReplace( Event event, const char[] name, bool dontBroadcast )
+{
+	if ( !g_bCvar_PluginEnable ) return;
+	
+	int player 	= GetClientOfUserId( event.GetInt( "player" ));
+	int bot 	= GetClientOfUserId( event.GetInt( "bot" ));
+	if ( Client_IsValid( player ) && Client_IsValid( bot ))
+	{
+		// player takeover bot
+		if( StrEqual( name, "bot_player_replace", false ))
+		{
+			g_iStateRoom[player] 	= g_iStateRoom[bot];
+			g_iSpawnCount[player]	= g_iSpawnCount[bot];
+			PrintTextToServer( "Player takeover Bot", g_bCvar_IsDebugging );
+		}
+		// bot takeover player
+		else if( StrEqual( name, "player_bot_replace", false ))
+		{
+			g_iStateRoom[bot]	= g_iStateRoom[player];
+			g_iSpawnCount[bot]	= g_iSpawnCount[player];
+			StopBurningSound( player );
+			PrintTextToServer( "Bot takeover Player", g_bCvar_IsDebugging );
+		}
+	}
+}
+
 
 
 //=================== Rescue room Damage ===================//
@@ -602,10 +631,10 @@ public void EntityOutput_OnStartTouch_Rescueroom( const char[] output, int calle
 	
 	float pos[3];
 	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_fPos_Rescue ) > ( DIST_REFERENCE + 50.0 ))
+	if( GetVectorDistance( pos, g_fPos_Rescue ) > 200.0 )
 	{
 		// false alarm, mid map mission area
-		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Mission Area", activator );	
+		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Mission Area", activator );
 	}
 	else
 	{
@@ -708,7 +737,7 @@ void SetClientRoom( int client, int room )
 					// from rescue saferoom to outdoor
 					else if( g_iStateRoom[client] == ROOM_STATE_RESCUE )
 					{
-						if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Checkpoint Are", client );	
+						if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Checkpoint Area", client );	
 					}
 				}
 				case ROOM_STATE_SPAWN:
@@ -772,7 +801,6 @@ void SpawnSaferoomSensor( int client )
 	if( g_bIsFindDoorInit ) { return; }
 	
 	g_bIsFindDoorInit = true;
-	
 	
 	//===== find and register saferoom door =====//
 	Get_SaferoomDoor( client );
@@ -945,8 +973,6 @@ public Action Timer_GlobalDamage( Handle timer )
 	{
 		if( Survivor_InGame( i ))
 		{
-			if( IsFakeClient( i ) && !g_bCvar_DamageBot ) continue;
-			
 			if( g_bIsDamage_Rescue )
 			{	
 				// checkpoint area damage
@@ -955,6 +981,8 @@ public Action Timer_GlobalDamage( Handle timer )
 					// survivor has no attacker, continue damag.
 					if( !Survivor_IsPinned( i ))
 					{
+						if( IsFakeClient( i ) && !g_bCvar_DamageBot ) continue;
+						
 						// incap or ledge, kill him even faster.
 						if( Survivor_IsHopeless( i ))
 						{
@@ -1016,6 +1044,8 @@ public Action Timer_GlobalDamage( Handle timer )
 							// survivor has no attacker, continue damag.
 							if( !Survivor_IsPinned( i ))
 							{
+								if( IsFakeClient( i ) && !g_bCvar_DamageBot ) continue;
+								
 								// incap or ledge, kill him even faster.
 								if( Survivor_IsHopeless( i ))
 								{
@@ -1146,8 +1176,11 @@ void Create_DamageEffect( int victim, int attacker, int damage )
 
 	if( !IsFakeClient( victim ))
 	{
-		delete g_hStopSound[victim];
-		EmitSoundToClient( victim, SND_BURNING );
+		if( !g_bIsPlaySound[victim] )
+		{
+			g_bIsPlaySound[victim] = true;
+			EmitSoundToClient( victim, SND_BURNING );
+		}
 	}
 }
 
@@ -1240,19 +1273,11 @@ int PrecacheParticle(const char[] sEffectName)
 
 void StopBurningSound( int client )
 {
-	delete g_hStopSound[client];
-	g_hStopSound[client] = CreateTimer( 1.0, Timer_StopSound, GetClientUserId( client ));
-}
-
-public Action Timer_StopSound( Handle timer, any userid )
-{
-	int client = GetClientOfUserId( userid );
-	if( Survivor_IsValid( client ))
+	if( g_bIsPlaySound[client] )
 	{
-		g_hStopSound[client] = null;
 		StopSound( client, SNDCHAN_AUTO, SND_BURNING );
+		g_bIsPlaySound[client] = false;
 	}
-	return Plugin_Stop;
 }
 
 int LoadDoorConfig( const char[][] settingname, int length, const char[] mapname )
@@ -1269,9 +1294,12 @@ int LoadDoorConfig( const char[][] settingname, int length, const char[] mapname
 
 
 
-
-
 //======================== Stock ==========================//
+bool Client_IsValid( int client )
+{
+	return ( client > 0 && client <= MaxClients && IsClientInGame( client ));
+}
+
 bool Infected_IsValid( int client )
 {
 	return ( client > 0 && client <= MaxClients && IsClientInGame( client ) && GetClientTeam( client ) == TEAM_INFECTED );
@@ -1314,9 +1342,9 @@ void PrintTextToServer( const char[] text, bool print )
 	float len_buff = float( strlen( gauge_char ));
 	float len_text = float( strlen( text ));
 	float len_tags = float( strlen( gauge_tags ));
-	float len_diff = ( len_buff - len_text - len_tags ) / 2.0;
+	float len_diff = (( len_buff - len_text - len_tags ) / 2.0 ) - 1.0;
 	
-	for( int i = 0; i <= RoundToCeil(len_diff); i++ )
+	for( int i = 0; i < RoundToFloor(len_diff); i++ )
 	{
 		gauge_side[i] = gauge_char[0];
 	}
