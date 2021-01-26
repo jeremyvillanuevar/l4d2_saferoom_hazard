@@ -109,8 +109,6 @@ enum {
 	TIMER_RESCUE,
 	TIMER_LENGTH
 }
-Handle g_hTimer[TIMER_LENGTH];
-
 
 //== Client Last Door Touched ===//
 enum
@@ -120,7 +118,7 @@ enum
 	ROOM_STATE_RESCUE,
 	ROOM_STATE_LENGTH
 }
-int g_iStateRoom[MAXPLAYERS+1];
+
 
 
 //=== Special Map door offsets ==//
@@ -180,27 +178,35 @@ float g_fCheckpointMapRotation[] =
 };
 
 
-//========= Spawn damage ========//
-int		g_iSpawnCount[MAXPLAYERS+1];
-float	g_fPos_Spawn[3];
-int		g_iDoor_Spawn;
-
-
-//====== Checkpoint damage ======//
-float	g_fPos_Rescue[3];
-bool	g_bIsDamage_Rescue;
-int		g_iDoor_Rescue;
-
-
 //========= Misc check ==========//
-bool	g_bIsRound_End;
-bool	g_bIsRound_Finale;
-bool	g_bIsFindDoorInit;
-bool	g_bStateJump[MAXPLAYERS+1];
-char 	g_sCurrentMap[PLATFORM_MAX_PATH];
-bool 	g_bIsPlaySound[MAXPLAYERS+1];
 int 	g_iBloodSprite;
+char 	g_sCurrentMap[PLATFORM_MAX_PATH];
 
+enum struct PlayerManager
+{
+	int  iSpawnCount;
+	int	 iStateRoom;
+	bool bStateJump;
+	bool bIsPlaySound;
+}
+PlayerManager g_PMClient[MAXPLAYERS+1];
+
+enum struct EntityManager
+{
+	float	fPos_Spawn[3];
+	float	fPos_Rescue[3];
+	int		iDoor_Spawn;
+	int		iDoor_Rescue;
+	bool	bIsDamage_Rescue;
+	Handle	hTimer[TIMER_LENGTH];
+	
+	//========= Misc check ==========//
+	bool	bIsRound_End;
+	bool	bIsRound_Finale;
+	bool	bIsFindDoorInit;
+}
+EntityManager g_EMEntity;
+//g_EMEntity.bIsFindDoorInit
 
 public Plugin myinfo = 
 {
@@ -317,7 +323,7 @@ public Action Command_ForceEnter_CheckpointRoom( int client, int args )
 		return Plugin_Handled;
 	}
 	
-	if ( g_iDoor_Rescue == -1 )
+	if ( g_EMEntity.iDoor_Rescue == -1 )
 	{
 		ReplyToCommand( client, "[SAFEROOM]: Teleport referance not found!!" );
 		return Plugin_Handled;
@@ -331,18 +337,18 @@ public Action Command_ForceEnter_CheckpointRoom( int client, int args )
 	
 	if ( g_bCvar_DoorWinState )
 	{
-		AcceptEntityInput( g_iDoor_Rescue, "Close" );
+		AcceptEntityInput( g_EMEntity.iDoor_Rescue, "Close" );
 	}
 	else
 	{
-		AcceptEntityInput( g_iDoor_Rescue, "Open" );
+		AcceptEntityInput( g_EMEntity.iDoor_Rescue, "Open" );
 	}
 	
 	for ( int i = 1; i <= MaxClients; i++ )
 	{
 		if ( IsClientInGame( i ) && IsPlayerAlive( i ) && GetClientTeam( i ) == TEAM_SURVIVOR )
 		{
-			TeleportPlayer( i, g_fPos_Rescue, SND_TELEPORT );
+			TeleportPlayer( i, g_EMEntity.fPos_Rescue, SND_TELEPORT );
 		}
 	}
 	return Plugin_Handled;
@@ -374,16 +380,16 @@ public Action Command_ForceEnter_Saferoom( int client, int args )
 	int type = StringToInt( arg1 );
 	if( type == 0 )
 	{
-		if ( g_iDoor_Spawn != -1 )
+		if ( g_EMEntity.iDoor_Spawn != -1 )
 		{
-			g_bStateJump[client]     = true;
-			g_iStateRoom[client] = ROOM_STATE_SPAWN;
+			g_PMClient[client].bStateJump = true;
+			g_PMClient[client].iStateRoom = ROOM_STATE_SPAWN;
 			
 			if( g_bCvar_NotifyExit )
 			{
 				PrintHintText( client, "%N Entering Spawn Saferoom!!", client );
 			}
-			TeleportPlayer( client, g_fPos_Spawn, SND_TELEPORT );
+			TeleportPlayer( client, g_EMEntity.fPos_Spawn, SND_TELEPORT );
 		}
 		else
 		{
@@ -392,10 +398,10 @@ public Action Command_ForceEnter_Saferoom( int client, int args )
 	}
 	else if( type == 1 )
 	{
-		if ( g_iDoor_Rescue != -1 )
+		if ( g_EMEntity.iDoor_Rescue != -1 )
 		{
-			g_iStateRoom[client] = ROOM_STATE_OUTDOOR;
-			TeleportPlayer( client, g_fPos_Rescue, SND_TELEPORT );
+			g_PMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
+			TeleportPlayer( client, g_EMEntity.fPos_Rescue, SND_TELEPORT );
 		}
 		else
 		{
@@ -411,7 +417,7 @@ public Action Command_ForceEnter_Saferoom( int client, int args )
 		{
 			if ( IsClientInGame( i ) && IsPlayerAlive( i ) && GetClientTeam( i ) == TEAM_SURVIVOR )
 			{
-				g_iStateRoom[i]	= g_iStateRoom[client];
+				g_PMClient[i].iStateRoom = g_PMClient[client].iStateRoom;
 				StopBurningSound( i );
 				TeleportPlayer( i, pos, SND_TELEPORT );
 			}
@@ -478,21 +484,21 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
-	g_iSensorType_Spawn[0]	= -1;
-	g_iSensorType_Spawn[1]	= -1;
+	g_iSensorType_Spawn[0]		= -1;
+	g_iSensorType_Spawn[1]		= -1;
 	
-	g_bIsRound_End 		= true;
-	g_bIsRound_Finale 	= false;
-	g_bIsDamage_Rescue 	= false;
-	g_iDoor_Spawn		= -1;
-	g_iDoor_Rescue		= -1;
-	g_fPos_Spawn		= view_as<float>({ 0.0, 0.0, 0.0 });
-	g_fPos_Rescue		= view_as<float>({ 0.0, 0.0, 0.0 });
-	g_bIsFindDoorInit 	= false;
+	g_EMEntity.bIsRound_End 	= true;
+	g_EMEntity.bIsRound_Finale 	= false;
+	g_EMEntity.bIsDamage_Rescue = false;
+	g_EMEntity.iDoor_Spawn		= -1;
+	g_EMEntity.iDoor_Rescue		= -1;
+	g_EMEntity.fPos_Spawn		= view_as<float>({ 0.0, 0.0, 0.0 });
+	g_EMEntity.fPos_Rescue		= view_as<float>({ 0.0, 0.0, 0.0 });
+	g_EMEntity.bIsFindDoorInit	= false;
 	
 	for( int i = 0; i < TIMER_LENGTH; i++ )
 	{
-		delete g_hTimer[i];
+		delete g_EMEntity.hTimer[i];
 	}
 }
 
@@ -500,9 +506,9 @@ public void OnClientPutInServer( int client )
 {
 	if ( client > 0 )
 	{
-		g_iStateRoom[client] 	= -1;
-		g_bStateJump[client] 	= false;
-		g_bIsPlaySound[client] 	= false;
+		g_PMClient[client].iStateRoom 	= -1;
+		g_PMClient[client].bStateJump 	= false;
+		g_PMClient[client].bIsPlaySound	= false;
 	}
 }
 
@@ -522,7 +528,7 @@ public void EVENT_Finale( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
-	g_bIsRound_Finale = true;
+	g_EMEntity.bIsRound_Finale = true;
 }
 
 public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast )
@@ -534,12 +540,12 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 	if ( close && Survivor_IsValid( client ))
 	{
 		// only human player closing saferoom door from inside count
-		if( !IsFakeClient( client ) && g_iStateRoom[client] == ROOM_STATE_RESCUE )
+		if( !IsFakeClient( client ) && g_PMClient[client].iStateRoom == ROOM_STATE_RESCUE )
 		{
 			int count;
 			for( int i = 1; i <= MaxClients; i++ )
 			{
-				if( Survivor_InGame( i ) && !IsFakeClient( i ) && g_iStateRoom[i] == ROOM_STATE_RESCUE )
+				if( Survivor_InGame( i ) && !IsFakeClient( i ) && g_PMClient[i].iStateRoom == ROOM_STATE_RESCUE )
 				{
 					count++;
 				}
@@ -549,9 +555,9 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			{
 				for( int i = 1; i <= MaxClients; i++ )
 				{
-					if( Survivor_InGame( i ) && g_iStateRoom[i] != ROOM_STATE_RESCUE )
+					if( Survivor_InGame( i ) && g_PMClient[i].iStateRoom != ROOM_STATE_RESCUE )
 					{
-						TeleportPlayer( i, g_fPos_Rescue, SND_TELEPORT );
+						TeleportPlayer( i, g_EMEntity.fPos_Rescue, SND_TELEPORT );
 					}
 				}
 				
@@ -569,7 +575,7 @@ public void Event_PlayerRescued( Event event, const char[] name, bool dontBroadc
 	if ( Survivor_IsValid( client ))
 	{
 		// closet rescue, set player position outdoor
-		g_iStateRoom[client] = ROOM_STATE_OUTDOOR;
+		g_PMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
 	}
 }
 
@@ -606,15 +612,15 @@ public void Event_PlayerReplace( Event event, const char[] name, bool dontBroadc
 		// player takeover bot
 		if( StrEqual( name, "bot_player_replace", false ))
 		{
-			g_iStateRoom[player] 	= g_iStateRoom[bot];
-			g_iSpawnCount[player]	= g_iSpawnCount[bot];
+			g_PMClient[player].iStateRoom = g_PMClient[bot].iStateRoom;
+			g_PMClient[player].iSpawnCount = g_PMClient[bot].iSpawnCount;
 			PrintTextToServer( "Player takeover Bot", g_bCvar_IsDebugging );
 		}
 		// bot takeover player
 		else if( StrEqual( name, "player_bot_replace", false ))
 		{
-			g_iStateRoom[bot]	= g_iStateRoom[player];
-			g_iSpawnCount[bot]	= g_iSpawnCount[player];
+			g_PMClient[bot].iStateRoom	= g_PMClient[player].iStateRoom;
+			g_PMClient[bot].iSpawnCount = g_PMClient[player].iSpawnCount;
 			StopBurningSound( player );
 			PrintTextToServer( "Bot takeover Player", g_bCvar_IsDebugging );
 		}
@@ -627,11 +633,11 @@ public void Event_PlayerReplace( Event event, const char[] name, bool dontBroadc
 //==================== code from @Mart =====================//
 public void EntityOutput_OnStartTouch_Rescueroom( const char[] output, int caller, int activator, float time )
 {
-	if( !g_bCvar_PluginEnable || g_iDoor_Rescue == -1 || !Survivor_IsValid( activator )) return;
+	if( !g_bCvar_PluginEnable || g_EMEntity.iDoor_Rescue == -1 || !Survivor_IsValid( activator )) return;
 	
 	float pos[3];
 	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_fPos_Rescue ) > 200.0 )
+	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > 200.0 )
 	{
 		// false alarm, mid map mission area
 		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Mission Area", activator );
@@ -641,7 +647,7 @@ public void EntityOutput_OnStartTouch_Rescueroom( const char[] output, int calle
 		// entering actual saferoom door
 		SetClientRoom( activator, ROOM_STATE_RESCUE );
 		
-		if( !g_bIsDamage_Rescue && g_hTimer[TIMER_RESCUE] == null )
+		if( !g_EMEntity.bIsDamage_Rescue && g_EMEntity.hTimer[TIMER_RESCUE] == null )
 		{
 			bool start = true;
 			for( int i = 1; i <= MaxClients; i++ )
@@ -649,7 +655,7 @@ public void EntityOutput_OnStartTouch_Rescueroom( const char[] output, int calle
 				if( Survivor_InGame( i ))
 				{
 					GetEntPropVector( i, Prop_Send, "m_vecOrigin", pos );
-					if( GetVectorDistance( pos, g_fPos_Rescue ) > g_fCvar_Radius )
+					if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > g_fCvar_Radius )
 					{
 						start = false;
 						break;
@@ -659,7 +665,7 @@ public void EntityOutput_OnStartTouch_Rescueroom( const char[] output, int calle
 			
 			if( start )
 			{
-				g_hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
+				g_EMEntity.hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
 				if( g_bCvar_LeaveSpawnMsg )
 				{
 					for( int i = 1; i <= MaxClients; i ++ )
@@ -686,18 +692,18 @@ public Action Timer_RescueCountdown( Handle timer )
 		}
 	}
 	
-	g_bIsDamage_Rescue		= true;
-	g_hTimer[TIMER_RESCUE]	= null;
+	g_EMEntity.bIsDamage_Rescue		= true;
+	g_EMEntity.hTimer[TIMER_RESCUE]	= null;
 	return Plugin_Stop;
 }
 
 public void EntityOutput_OnEndTouch_Rescueroom( const char[] output, int caller, int activator, float time )
 {
-	if( !g_bCvar_PluginEnable || g_iDoor_Rescue == -1 || !Survivor_IsValid( activator )) return;
+	if( !g_bCvar_PluginEnable || g_EMEntity.iDoor_Rescue == -1 || !Survivor_IsValid( activator )) return;
 	
 	float pos[3];
 	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_fPos_Rescue ) > ( DIST_REFERENCE + 50.0 ))
+	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > ( DIST_REFERENCE + 50.0 ))
 	{
 		// false alarm, mid map mission area
 		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Exiting Mission Area", activator );	
@@ -712,21 +718,21 @@ public void EntityOutput_OnEndTouch_Rescueroom( const char[] output, int caller,
 void SetClientRoom( int client, int room )
 {
 	// player use 'Command_ForceEnter_Saferoom' developer command to move around, ignore check.
-	if( g_bStateJump[client] )
+	if( g_PMClient[client].bStateJump )
 	{
-		g_bStateJump[client] = false;
+		g_PMClient[client].bStateJump = false;
 	}
 	else
 	{
 		// door touched is not equal to the previous door touched
-		if( g_iStateRoom[client] != room )
+		if( g_PMClient[client].iStateRoom != room )
 		{
 			switch( room )
 			{
 				case ROOM_STATE_OUTDOOR:
 				{ 
 					// from spawn saferoom to outdoor
-					if( g_iStateRoom[client] == ROOM_STATE_SPAWN )
+					if( g_PMClient[client].iStateRoom == ROOM_STATE_SPAWN )
 					{
 						StopBurningSound( client );
 						
@@ -735,7 +741,7 @@ void SetClientRoom( int client, int room )
 						if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Spawn Saferoom", client );	
 					}
 					// from rescue saferoom to outdoor
-					else if( g_iStateRoom[client] == ROOM_STATE_RESCUE )
+					else if( g_PMClient[client].iStateRoom == ROOM_STATE_RESCUE )
 					{
 						if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Checkpoint Area", client );	
 					}
@@ -748,7 +754,7 @@ void SetClientRoom( int client, int room )
 				case ROOM_STATE_RESCUE:
 				{
 					// from outdoor or spawn saferoom entering spawn rescue saferoom
-					if( g_iStateRoom[client] == ROOM_STATE_OUTDOOR || g_iStateRoom[client] == ROOM_STATE_SPAWN )
+					if( g_PMClient[client].iStateRoom == ROOM_STATE_OUTDOOR || g_PMClient[client].iStateRoom == ROOM_STATE_SPAWN )
 					{
 						StopBurningSound( client );
 					}
@@ -757,7 +763,7 @@ void SetClientRoom( int client, int room )
 			}
 			
 			// update new door touched
-			g_iStateRoom[client] = room;
+			g_PMClient[client].iStateRoom = room;
 		}
 	}
 }
@@ -780,10 +786,10 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 			SpawnSaferoomSensor( client );
 			
 			// set player spawn room max stay count.
-			g_iSpawnCount[client] = g_iCvar_Notify_Total;
+			g_PMClient[client].iSpawnCount = g_iCvar_Notify_Total;
 			
 			// set player state inside spawn saferoom.
-			g_iStateRoom[client] = ROOM_STATE_SPAWN;
+			g_PMClient[client].iStateRoom = ROOM_STATE_SPAWN;
 		}
 		else if( team == TEAM_INFECTED )
 		{
@@ -798,19 +804,19 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 void SpawnSaferoomSensor( int client )
 {
 	//===== dont search saferoom door twice =====//
-	if( g_bIsFindDoorInit ) { return; }
+	if( g_EMEntity.bIsFindDoorInit ) { return; }
 	
-	g_bIsFindDoorInit = true;
+	g_EMEntity.bIsFindDoorInit = true;
 	
 	//===== find and register saferoom door =====//
 	Get_SaferoomDoor( client );
 	
 
 	//======== create spawn door sensor ========//
-	if( g_iDoor_Spawn != -1 )
+	if( g_EMEntity.iDoor_Spawn != -1 )
 	{
 		char m_ModelName[PLATFORM_MAX_PATH];
-		GetEntPropString( g_iDoor_Spawn, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
+		GetEntPropString( g_EMEntity.iDoor_Spawn, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
 		
 		// spawn door offset setting
 		int type = 1;
@@ -824,7 +830,7 @@ void SpawnSaferoomSensor( int client )
 		float buf[3];
 		float pos[3];
 		float ang[3];
-		Get_EntityLocation( g_iDoor_Spawn, pos, ang );
+		Get_EntityLocation( g_EMEntity.iDoor_Spawn, pos, ang );
 		
 		buf = view_as<float>(pos);
 		if( type == 0 )
@@ -867,39 +873,40 @@ void SpawnSaferoomSensor( int client )
 		}
 		
 		// create teleport position
-		g_fPos_Spawn	= view_as<float>(pos);
-		g_fPos_Spawn[2]	+= DIST_DUMMYHEIGHT;
+		g_EMEntity.fPos_Spawn = view_as<float>(pos);
+		
+		g_EMEntity.fPos_Spawn[2] += DIST_DUMMYHEIGHT;
 		
 		if( type == 0 )
 		{
-			g_fPos_Spawn[0] += DIST_REFERENCE * Cosine( DegToRad( ang[1] ));
-			g_fPos_Spawn[1] += DIST_REFERENCE * Sine( DegToRad( ang[1] ));
+			g_EMEntity.fPos_Spawn[0] += DIST_REFERENCE * Cosine( DegToRad( ang[1] ));
+			g_EMEntity.fPos_Spawn[1] += DIST_REFERENCE * Sine( DegToRad( ang[1] ));
 		}
 		else if( type == 1 )
 		{
-			g_fPos_Spawn[0] -= DIST_REFERENCE * Cosine( DegToRad( ang[1] ));
-			g_fPos_Spawn[1] -= DIST_REFERENCE * Sine( DegToRad( ang[1] ));
+			g_EMEntity.fPos_Spawn[0] -= DIST_REFERENCE * Cosine( DegToRad( ang[1] ));
+			g_EMEntity.fPos_Spawn[1] -= DIST_REFERENCE * Sine( DegToRad( ang[1] ));
 		}
 		
 		// create toy referance
 		if( g_bCvar_ReferanceToy )
 		{
 			int rand = GetRandomInt( 0, 2 );
-			Create_Reference( g_fPos_Spawn, ang, g_sDummyModel[rand] );
+			Create_Reference( g_EMEntity.fPos_Spawn, ang, g_sDummyModel[rand] );
 		}
 	}
 	
 	
 	//===== create checkpoint door referance =====//
-	if( g_iDoor_Rescue != -1 )
+	if( g_EMEntity.iDoor_Rescue != -1 )
 	{
 		char m_ModelName[PLATFORM_MAX_PATH];
-		GetEntPropString( g_iDoor_Rescue, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
+		GetEntPropString( g_EMEntity.iDoor_Rescue, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
 		
 		// create teleport position
 		float ang[3];
-		Get_EntityLocation( g_iDoor_Rescue, g_fPos_Rescue, ang );
-		g_fPos_Rescue[2] += DIST_DUMMYHEIGHT;
+		Get_EntityLocation( g_EMEntity.iDoor_Rescue, g_EMEntity.fPos_Rescue, ang );
+		g_EMEntity.fPos_Rescue[2] += DIST_DUMMYHEIGHT;
 		
 		int position = LoadDoorConfig( g_sCheckpointMapName, sizeof( g_sCheckpointMapName ), g_sCurrentMap );
 		if( position != -1 )
@@ -911,14 +918,14 @@ void SpawnSaferoomSensor( int client )
 			ang[1] += 90.0;
 		}
 		
-		g_fPos_Rescue[0] += DIST_REFERENCE * Cosine( DegToRad( ang[1] ));
-		g_fPos_Rescue[1] += DIST_REFERENCE * Sine( DegToRad( ang[1] ));
+		g_EMEntity.fPos_Rescue[0] += DIST_REFERENCE * Cosine( DegToRad( ang[1] ));
+		g_EMEntity.fPos_Rescue[1] += DIST_REFERENCE * Sine( DegToRad( ang[1] ));
 		
 		// create toy referance
 		if( g_bCvar_ReferanceToy )
 		{
 			int rand = GetRandomInt( 0, 2 );
-			Create_Reference( g_fPos_Rescue, ang, g_sDummyModel[rand] );
+			Create_Reference( g_EMEntity.fPos_Rescue, ang, g_sDummyModel[rand] );
 		}
 	}
 }
@@ -942,11 +949,11 @@ public Action OnDoorSensorTouched( int entity, int client )
 void StartGlobalDamageTimer()
 {
 	// if map has spawn saferoom door or rescue saferoom door and are not finale, start damage timer
-	if( g_hTimer[TIMER_GLOBAL] == null && !g_bIsRound_Finale && ( g_iDoor_Spawn != -1 || g_iDoor_Rescue != -1 ))
+	if( g_EMEntity.hTimer[TIMER_GLOBAL] == null && !g_EMEntity.bIsRound_Finale && ( g_EMEntity.iDoor_Spawn != -1 || g_EMEntity.iDoor_Rescue != -1 ))
 	{
-		g_bIsRound_End = false;
+		g_EMEntity.bIsRound_End = false;
 		
-		g_hTimer[TIMER_GLOBAL] = CreateTimer( 1.0, Timer_GlobalDamage, _, TIMER_REPEAT );
+		g_EMEntity.hTimer[TIMER_GLOBAL] = CreateTimer( 1.0, Timer_GlobalDamage, _, TIMER_REPEAT );
 		
 		PrintTextToServer( "Timer Damage has started", g_bCvar_IsDebugging );
 	}
@@ -954,16 +961,16 @@ void StartGlobalDamageTimer()
 
 public Action Timer_GlobalDamage( Handle timer )
 {
-	if( g_hTimer[TIMER_GLOBAL] != timer )
+	if( g_EMEntity.hTimer[TIMER_GLOBAL] != timer )
 	{
 		PrintTextToServer( "Timer damage lost track and terminated", true );
 		
 		return Plugin_Stop;
 	}
 	
-	if( g_bIsRound_Finale || g_bIsRound_End )
+	if( g_EMEntity.bIsRound_Finale || g_EMEntity.bIsRound_End )
 	{
-		g_hTimer[TIMER_GLOBAL] = null;
+		g_EMEntity.hTimer[TIMER_GLOBAL] = null;
 		PrintTextToServer( "Timer damage terminated for finale", g_bCvar_IsDebugging );
 		
 		return Plugin_Stop;
@@ -973,10 +980,10 @@ public Action Timer_GlobalDamage( Handle timer )
 	{
 		if( Survivor_InGame( i ))
 		{
-			if( g_bIsDamage_Rescue )
+			if( g_EMEntity.bIsDamage_Rescue )
 			{	
 				// checkpoint area damage
-				if( g_iStateRoom[i] != ROOM_STATE_RESCUE )
+				if( g_PMClient[i].iStateRoom != ROOM_STATE_RESCUE )
 				{
 					// survivor has no attacker, continue damag.
 					if( !Survivor_IsPinned( i ))
@@ -997,24 +1004,24 @@ public Action Timer_GlobalDamage( Handle timer )
 			}
 			else
 			{
-				if( g_iDoor_Spawn != -1 )
+				if( g_EMEntity.iDoor_Spawn != -1 )
 				{
 					// spawn area damage
-					g_iSpawnCount[i] -= 1;
-					if( g_iSpawnCount[i] < -1 )
+					g_PMClient[i].iSpawnCount -= 1;
+					if( g_PMClient[i].iSpawnCount < -1 )
 					{
-						g_iSpawnCount[i] = -1;
+						g_PMClient[i].iSpawnCount = -1;
 					}
 					
 					if( g_bCvar_LeaveSpawnMsg && !IsFakeClient( i ))
 					{
-						if( g_iSpawnCount[i] == (g_iCvar_Notify_Total - 1))
+						if( g_PMClient[i].iSpawnCount == (g_iCvar_Notify_Total - 1))
 						{
 							PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to leave Spawn Saferoom!!", float( g_iCvar_Notify_Total ));
 						}
-						else if( g_iSpawnCount[i] == g_iCvar_NotifySpawn2 )
+						else if( g_PMClient[i].iSpawnCount == g_iCvar_NotifySpawn2 )
 						{
-							if( g_iStateRoom[i] == ROOM_STATE_SPAWN )
+							if( g_PMClient[i].iStateRoom == ROOM_STATE_SPAWN )
 							{
 								PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to leave Spawn Saferoom!!", float( g_iCvar_NotifySpawn2 ));
 							}
@@ -1023,9 +1030,9 @@ public Action Timer_GlobalDamage( Handle timer )
 								PrintToChat( i, "\x05[\x04WARNING\x05]: \x01Spawn Saferoom Hazard in \x04%0.0f \x01sec(s)", float( g_iCvar_NotifySpawn2 ));
 							}
 						}
-						else if( g_iSpawnCount[i] == 0 )
+						else if( g_PMClient[i].iSpawnCount == 0 )
 						{
-							if( g_iStateRoom[i] == ROOM_STATE_SPAWN )
+							if( g_PMClient[i].iStateRoom == ROOM_STATE_SPAWN )
 							{
 								PrintToChat( i, "\x05[\x04WARNING\x05]: \x01Spawn Saferoom Hazard effecting you!!" );
 							}
@@ -1037,9 +1044,9 @@ public Action Timer_GlobalDamage( Handle timer )
 						}
 					}
 					
-					if( g_iSpawnCount[i] < 0 )
+					if( g_PMClient[i].iSpawnCount < 0 )
 					{
-						if( g_iStateRoom[i] == ROOM_STATE_SPAWN )
+						if( g_PMClient[i].iStateRoom == ROOM_STATE_SPAWN )
 						{
 							// survivor has no attacker, continue damag.
 							if( !Survivor_IsPinned( i ))
@@ -1092,26 +1099,26 @@ void Get_SaferoomDoor( int client )
 		float distance = GetVectorDistance( playPos, doorPos );
 		if ( distance <= DIST_RADIUS )
 		{
-			if( g_iDoor_Spawn == -1 )
+			if( g_EMEntity.iDoor_Spawn == -1 )
 			{
 				char m_ModelName[PLATFORM_MAX_PATH];
 				GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
 				if( StrEqual( m_ModelName, MDL_SPAWNROOM1, false ) || StrEqual( m_ModelName, MDL_SPAWNROOM2, false ))
 				{
-					g_iDoor_Spawn = entity;
+					g_EMEntity.iDoor_Spawn = entity;
 					PrintTextToServer( "Spawn Door found", g_bCvar_IsDebugging );
 				}
 			}
 		}
 		else
 		{
-			if( g_iDoor_Rescue == -1 )
+			if( g_EMEntity.iDoor_Rescue == -1 )
 			{
 				char m_ModelName[PLATFORM_MAX_PATH];
 				GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
 				if( StrEqual( m_ModelName, MDL_CHECKROOM1, false ) || StrEqual( m_ModelName, MDL_CHECKROOM2, false ))
 				{
-					g_iDoor_Rescue = entity;
+					g_EMEntity.iDoor_Rescue = entity;
 					AcceptEntityInput( entity, "close" );
 					PrintTextToServer( "Checkpoint Door found", g_bCvar_IsDebugging );
 				}
@@ -1176,9 +1183,9 @@ void Create_DamageEffect( int victim, int attacker, int damage )
 
 	if( !IsFakeClient( victim ))
 	{
-		if( !g_bIsPlaySound[victim] )
+		if( !g_PMClient[victim].bIsPlaySound )
 		{
-			g_bIsPlaySound[victim] = true;
+			g_PMClient[victim].bIsPlaySound = true;
 			EmitSoundToClient( victim, SND_BURNING );
 		}
 	}
@@ -1273,10 +1280,10 @@ int PrecacheParticle(const char[] sEffectName)
 
 void StopBurningSound( int client )
 {
-	if( g_bIsPlaySound[client] )
+	if( g_PMClient[client].bIsPlaySound )
 	{
 		StopSound( client, SNDCHAN_AUTO, SND_BURNING );
-		g_bIsPlaySound[client] = false;
+		g_PMClient[client].bIsPlaySound = false;
 	}
 }
 
@@ -1334,26 +1341,41 @@ void PrintTextToServer( const char[] text, bool print )
 {
 	if( !print ) return;
 	
+	char gauge_none[2]  = "";
 	char gauge_tags[16] = "[SAFEROOM]:";
 	char gauge_char[99] = "===========================================================================";
 	char gauge_side[64];
 	FormatEx( gauge_side, sizeof( gauge_side ), "" );
 	
-	float len_buff = float( strlen( gauge_char ));
+	float len_char = float( strlen( gauge_char ));
 	float len_text = float( strlen( text ));
 	float len_tags = float( strlen( gauge_tags ));
-	float len_diff = (( len_buff - len_text - len_tags ) / 2.0 ) - 1.0;
+	float len_diff = (( len_char - len_text - len_tags ) / 2.0 ) - 1.0;
 	
 	for( int i = 0; i < RoundToFloor(len_diff); i++ )
 	{
 		gauge_side[i] = gauge_char[0];
 	}
 	
+	char gauge_buff[99];
+	Format( gauge_buff, sizeof( gauge_buff ), "%s %s %s %s", gauge_side, gauge_tags, text, gauge_side );
+	int len1 = strlen( gauge_buff );
+	int len2 = RoundToFloor( len_char );
+	if( len1 > len2 )
+	{
+		for( int i = len2; i < sizeof( gauge_char ); i++ )
+		{
+			gauge_buff[i] = gauge_none[0];
+		}
+	}
+	
+	//PrintToServer( "===========================================================================" );
 	//PrintToServer( "=========== [SAFEROOM]: Timer damage terminated for finale ================" );
+	//PrintToServer( "===========================================================================" );
 	
 	PrintToServer( " " );
 	PrintToServer( "%s", gauge_char );
-	PrintToServer( "%s %s %s %s", gauge_side, gauge_tags, text, gauge_side );
+	PrintToServer( "%s", gauge_buff );
 	PrintToServer( "%s", gauge_char );
 	PrintToServer( " " );
 }
