@@ -50,40 +50,15 @@ v 1.0.1
 #define MDL_SPAWNROOM2		"models/props_doors/checkpoint_door_-01.mdl"
 #define MDL_CHECKROOM1		"models/props_doors/checkpoint_door_02.mdl"
 #define MDL_CHECKROOM2		"models/props_doors/checkpoint_door_-02.mdl"
-#define MDL_PARTICLEFIRE	"burning_character_screen"	// @Silver [L4D2] Hud Splatter
+
+#define PAT_FIRE			"burning_character_screen"			// @Silver [L4D2] Hud Splatter
 
 #define MAT_BEAM			"materials/sprites/laserbeam.vmt"	// @silver [ANY] Trigger Multiple Commands
 #define MAT_HALO			"materials/sprites/halo01.vmt"
 #define MAT_BLOOD			"materials/sprites/bloodspray.vmt"
 
-//======== Global ConVar ========//
-ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
-		g_ConVarSafeHazard_DamageIncap,		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,		g_ConVarSafeHazard_EventNumber,	g_ConVarSafeHazard_CmdDoor,
-		g_ConVarSafeHazard_ReferanceToy,	g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_ExitMsg, 		g_ConVarSafeHazard_IsDamageBot,	g_ConVarSafeHazard_BloodColor,
-		g_ConVarSafeHazard_IsDebugging;
 
-
-//========== Global Cvar ========//
-bool	g_bCvar_PluginEnable;
-int		g_iCvar_NotifySpawn1;
-int		g_iCvar_NotifySpawn2;
-int		g_iCvar_Notify_Total;
-float	g_fCvar_Radius;
-int		g_iCvar_DamageAlive;
-int		g_iCvar_DamageIncap;
-bool	g_bCvar_LeaveSpawnMsg;
-bool	g_bCvar_EventDoorWin;
-int		g_iCvar_DoorNumber;
-bool	g_bCvar_DoorWinState;
-bool	g_bCvar_ReferanceToy;
-float	g_fCvar_CheckpoinCountdown;
-bool	g_bCvar_NotifyExit;
-bool	g_bCvar_DamageBot;
-int		g_iCvar_BloodColor[4];
-bool	g_bCvar_IsDebugging;
-
-
-//=== Special Map door offsets ==//
+//== Special Spawn door offsets ==//
 char g_sCheckpointMapName[][] =
 {
 	"c2m3_coaster",
@@ -164,6 +139,7 @@ enum {
 	TIMER_LENGTH
 }
 
+
 enum struct ClientManager
 {
 	int  iSpawnCount;
@@ -181,6 +157,7 @@ enum struct ClientManager
 }
 ClientManager g_CMClient[MAXPLAYERS+1];
 
+
 enum struct EntityManager
 {
 	float	fPos_Spawn[3];
@@ -195,7 +172,6 @@ enum struct EntityManager
 	bool	bIsRound_End;
 	bool	bIsRound_Finale;
 	bool	bIsFindDoorInit;
-	int		iBloodSprite;
 	
 	char sCurrentMap[PLATFORM_MAX_PATH];
 	
@@ -218,6 +194,7 @@ enum struct EntityManager
 	}
 }
 EntityManager g_EMEntity;
+
 
 //=== Map Vac Config ============//
 enum 
@@ -244,8 +221,9 @@ float g_fMapsVec[][][] =
 
 
 ////// Developer Touch Area Constructor //////
-int		g_iLaserMaterial;
-int		g_iHaloMaterial;
+int		g_iMaterialLaser;
+int		g_iMaterialHalo;
+int		g_iMaterialBlood;
 int		g_iEntityTest;
 float	g_mvecMins[3] = { -50.0, -50.0, 0.0 };
 float	g_mvecMaxs[3] = { 50.0, 50.0, 200.0 };
@@ -254,6 +232,36 @@ float	g_fAng[3];
 /////////////////////////////////////////////
 
 
+
+
+//======== Global ConVar ========//
+ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
+		g_ConVarSafeHazard_DamageIncap,		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,		g_ConVarSafeHazard_EventNumber,	g_ConVarSafeHazard_CmdDoor,
+		g_ConVarSafeHazard_ReferanceToy,	g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_ExitMsg, 		g_ConVarSafeHazard_IsDamageBot,	g_ConVarSafeHazard_BloodColor,
+		g_ConVarSafeHazard_IsDebugging;
+
+
+//========== Global Cvar ========//
+bool	g_bCvar_PluginEnable;
+int		g_iCvar_NotifySpawn1;
+int		g_iCvar_NotifySpawn2;
+int		g_iCvar_Notify_Total;
+float	g_fCvar_Radius;
+int		g_iCvar_DamageAlive;
+int		g_iCvar_DamageIncap;
+bool	g_bCvar_LeaveSpawnMsg;
+bool	g_bCvar_EventDoorWin;
+int		g_iCvar_DoorNumber;
+bool	g_bCvar_DoorWinState;
+bool	g_bCvar_ReferanceToy;
+float	g_fCvar_CheckpoinCountdown;
+bool	g_bCvar_NotifyExit;
+bool	g_bCvar_DamageBot;
+int		g_iCvar_BloodColor[4];
+bool	g_bCvar_IsDebugging;
+
+
+//========= Plugin Start ========//
 public Plugin myinfo = 
 {
 	name		= "Safe Room Hazard",
@@ -646,17 +654,15 @@ public void OnMapStart()
 		PrecacheModel( g_sDummyModel[i] );
 	}
 	
-	g_EMEntity.iBloodSprite = PrecacheModel( MAT_BLOOD );
-	
 	PrecacheSound( SND_TELEPORT, true );
 	PrecacheSound( SND_BURNING, true );
 	PrecacheSound( SND_WARNING, true );
-	PrecacheParticle( MDL_PARTICLEFIRE );
 	
-	GetCurrentMap( g_EMEntity.sCurrentMap, sizeof( g_EMEntity.sCurrentMap ));
+	PrecacheParticle( PAT_FIRE );
 	
-	g_iLaserMaterial = PrecacheModel(MAT_BEAM);
-	g_iHaloMaterial = PrecacheModel(MAT_HALO);
+	g_iMaterialLaser	= PrecacheModel( MAT_BEAM );
+	g_iMaterialHalo		= PrecacheModel( MAT_HALO );
+	g_iMaterialBlood	= PrecacheModel( MAT_BLOOD );
 	
 	g_EMEntity.iConfPos = -1;
 	for( int i = 0; i < sizeof( g_sMapConfig ); i++ )
@@ -667,6 +673,8 @@ public void OnMapStart()
 			break;
 		}
 	}
+	
+	GetCurrentMap( g_EMEntity.sCurrentMap, sizeof( g_EMEntity.sCurrentMap ));
 }
 
 public void OnClientPutInServer( int client )
@@ -881,96 +889,6 @@ public Action OnEscapeTriggerEndTouch( int entity, int client )
 	return Plugin_Continue;
 }
 
-
-
-//=================== Rescue Arae Damage ===================// @Mart
-public void EntityOutput_OnStartTouch_RescueArea( const char[] output, int caller, int activator, float time )
-{
-	if( !Survivor_IsValid( activator )) return;
-	
-	float pos[3];
-	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > 200.0 )
-	{
-		// false alarm, mid map mission area
-		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Mission Area", activator );
-	}
-	else
-	{
-		StopBurningSound( activator );
-		g_CMClient[activator].iStateRoom = ROOM_STATE_RESCUE;
-		
-		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Checkpoint Area", activator );
-		
-		if( !g_EMEntity.bIsDamage_Rescue && g_EMEntity.hTimer[TIMER_RESCUE] == null )
-		{
-			bool start = true;
-			for( int i = 1; i <= MaxClients; i++ )
-			{
-				if( Survivor_InGame( i ))
-				{
-					GetEntPropVector( i, Prop_Send, "m_vecOrigin", pos );
-					if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > g_fCvar_Radius )
-					{
-						start = false;
-						break;
-					}
-				}
-			}
-			
-			if( start )
-			{
-				g_EMEntity.hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
-				if( g_bCvar_LeaveSpawnMsg )
-				{
-					for( int i = 1; i <= MaxClients; i ++ )
-					{
-						if( Survivor_InGame( i ) && !IsFakeClient( i ))
-						{
-							PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to enter Checkpoint Area!!", g_fCvar_CheckpoinCountdown );
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-public Action Timer_RescueCountdown( Handle timer )
-{
-	for( int i = 1; i <= MaxClients; i ++ )
-	{
-		if( Survivor_InGame( i ) && !IsFakeClient( i ))
-		{
-			PrintToChat( i, "\x05[\x04WARNING\x05]: \x01Checkpoint Area damage has started!!" );
-			EmitSoundToClient( i, SND_WARNING );
-		}
-	}
-	
-	g_EMEntity.bIsDamage_Rescue		= true;
-	g_EMEntity.hTimer[TIMER_RESCUE]	= null;
-	return Plugin_Stop;
-}
-
-public void EntityOutput_OnEndTouch_RescueArea( const char[] output, int caller, int activator, float time )
-{
-	if( !Survivor_IsValid( activator )) return;
-	
-	float pos[3];
-	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > ( DIST_REFERENCE + 50.0 ))
-	{
-		// false alarm, mid map mission area
-		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Exiting Mission Area", activator );	
-	}
-	else
-	{
-		g_CMClient[activator].iStateRoom = ROOM_STATE_OUTDOOR;
-		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Left Checkpoint Area", activator );
-	}
-}
-
-//=================== Spawn Area Damage ===================//
 public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
@@ -1033,17 +951,80 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 	}
 }
 
-public Action Timer_ForceInfectedSuicide( Handle timer, any userid )
+
+
+//=================== Rescue Arae Damage ===================// @Mart
+public void EntityOutput_OnStartTouch_RescueArea( const char[] output, int caller, int activator, float time )
 {
-	int client = GetClientOfUserId( userid );
-	if ( Infected_IsValid( client ))
+	if( !Survivor_IsValid( activator )) return;
+	
+	float pos[3];
+	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
+	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > 200.0 )
 	{
-		ForcePlayerSuicide( client );
-		PrintToServer( "[SAFEROOM]: Player %N Commited Suicide", client );
+		// false alarm, mid map mission area
+		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Mission Area", activator );
 	}
-	return Plugin_Stop;
+	else
+	{
+		StopBurningSound( activator );
+		g_CMClient[activator].iStateRoom = ROOM_STATE_RESCUE;
+		
+		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Entering Checkpoint Area", activator );
+		
+		if( !g_EMEntity.bIsDamage_Rescue && g_EMEntity.hTimer[TIMER_RESCUE] == null )
+		{
+			bool start = true;
+			for( int i = 1; i <= MaxClients; i++ )
+			{
+				if( Survivor_InGame( i ))
+				{
+					GetEntPropVector( i, Prop_Send, "m_vecOrigin", pos );
+					if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > g_fCvar_Radius )
+					{
+						start = false;
+						break;
+					}
+				}
+			}
+			
+			if( start )
+			{
+				g_EMEntity.hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
+				if( g_bCvar_LeaveSpawnMsg )
+				{
+					for( int i = 1; i <= MaxClients; i ++ )
+					{
+						if( Survivor_InGame( i ) && !IsFakeClient( i ))
+						{
+							PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to enter Checkpoint Area!!", g_fCvar_CheckpoinCountdown );
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
+public void EntityOutput_OnEndTouch_RescueArea( const char[] output, int caller, int activator, float time )
+{
+	if( !Survivor_IsValid( activator )) return;
+	
+	float pos[3];
+	GetEntPropVector( activator, Prop_Send, "m_vecOrigin", pos );
+	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > ( DIST_REFERENCE + 50.0 ))
+	{
+		// false alarm, mid map mission area
+		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Exiting Mission Area", activator );	
+	}
+	else
+	{
+		g_CMClient[activator].iStateRoom = ROOM_STATE_OUTDOOR;
+		if( g_bCvar_NotifyExit ) PrintHintText( activator, "%N Left Checkpoint Area", activator );
+	}
+}
+
+//=================== Spawn Area Damage ===================//
 public void EntityOutput_OnStartTouch_SpawnArea( const char[] output, int caller, int activator, float delay )
 {
 	if( !Survivor_IsValid( activator )) return;
@@ -1072,6 +1053,22 @@ public void EntityOutput_OnEndTouch_SpawnArea( const char[] output, int caller, 
 		
 		Print_ServerText( "Timer Damage has started", g_bCvar_IsDebugging );
 	}
+}
+
+public Action Timer_RescueCountdown( Handle timer )
+{
+	for( int i = 1; i <= MaxClients; i ++ )
+	{
+		if( Survivor_InGame( i ) && !IsFakeClient( i ))
+		{
+			PrintToChat( i, "\x05[\x04WARNING\x05]: \x01Checkpoint Area damage has started!!" );
+			EmitSoundToClient( i, SND_WARNING );
+		}
+	}
+	
+	g_EMEntity.bIsDamage_Rescue		= true;
+	g_EMEntity.hTimer[TIMER_RESCUE]	= null;
+	return Plugin_Stop;
 }
 
 public Action Timer_GlobalDamage( Handle timer )
@@ -1182,6 +1179,17 @@ public Action Timer_GlobalDamage( Handle timer )
 		}
 	}
 	return Plugin_Continue;
+}
+
+public Action Timer_ForceInfectedSuicide( Handle timer, any userid )
+{
+	int client = GetClientOfUserId( userid );
+	if ( Infected_IsValid( client ))
+	{
+		ForcePlayerSuicide( client );
+		PrintToServer( "[SAFEROOM]: Player %N Commited Suicide", client );
+	}
+	return Plugin_Stop;
 }
 
 
@@ -1344,8 +1352,8 @@ int Create_Reference( const char[] model, float pos[3], float ang[3] )
 void Create_DamageEffect( int victim, int attacker, int damage )
 {
 	Create_PointHurt( victim, attacker, damage, DMG_GENERIC, "" );
-	Create_BloodEffect( victim, g_EMEntity.iBloodSprite, g_iCvar_BloodColor );
-	AttachParticle( victim, MDL_PARTICLEFIRE );
+	Create_BloodEffect( victim, g_iMaterialBlood, g_iCvar_BloodColor );
+	Create_ScreenParticle( victim, PAT_FIRE );
 
 	if( !IsFakeClient( victim ))
 	{
@@ -1403,7 +1411,7 @@ void Create_BloodEffect( int client, int sprite, int color[4] )
 	}
 }
 
-void AttachParticle( int client, char[] particleType )	// @Silver [L4D2] Hud Splatter
+void Create_ScreenParticle( int client, char[] particleType )	// @Silver [L4D2] Hud Splatter
 {
     int entity = CreateEntityByName("info_particle_system");
     if( IsValidEdict(entity) )
@@ -1423,7 +1431,7 @@ void AttachParticle( int client, char[] particleType )	// @Silver [L4D2] Hud Spl
     }
 }
 
-int PrecacheParticle( const char[] sEffectName )		// @Silver [L4D2] Hud Splatter
+int PrecacheParticle( const char[] sEffectName )				// @Silver [L4D2] Hud Splatter
 {
 	static int table = INVALID_STRING_TABLE;
 	if( table == INVALID_STRING_TABLE )
@@ -1712,7 +1720,7 @@ void TE_SendBox( float vMins[3], float vMaxs[3] )
 
 void TE_SendBeam( const float vMins[3], const float vMaxs[3] )
 {
-	TE_SetupBeamPoints(vMins, vMaxs, g_iLaserMaterial, g_iHaloMaterial, 0, 0, 0.3 + 0.1, 1.0, 1.0, 1, 0.0, view_as<int>({ 0, 255, 0, 255 }), 0);
+	TE_SetupBeamPoints(vMins, vMaxs, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 0.3 + 0.1, 1.0, 1.0, 1, 0.0, view_as<int>({ 0, 255, 0, 255 }), 0);
 	TE_SendToAll();
 }
 
