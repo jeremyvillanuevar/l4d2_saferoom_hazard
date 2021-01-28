@@ -136,6 +136,7 @@ char g_sDummyModel[MDL_LENGTH][] =
 enum {
 	TIMER_GLOBAL,
 	TIMER_RESCUE,
+	TIMER_LASER,
 	TIMER_LENGTH
 }
 
@@ -164,27 +165,33 @@ enum struct EntityManager
 	float	fPos_Rescue[3];
 	int		iDoor_Spawn;
 	int		iDoor_Rescue;
-	bool	bIsDamage_Rescue;
-	Handle	hTimer[TIMER_LENGTH];
-	int		iConfPos;
-	
-	//========= Misc check ==========//
+	int		iRefs_Spawn;
+	int		iRefs_Rescue;
+	int		iEntTrigger;
+	int		iConfigPos;
 	bool	bIsRound_End;
+	bool	bIsDamage_Rescue;
 	bool	bIsRound_Finale;
 	bool	bIsFindDoorInit;
 	
-	char sCurrentMap[PLATFORM_MAX_PATH];
+	Handle	hTimer[TIMER_LENGTH];
+	char	sCurrentMap[PLATFORM_MAX_PATH];
 	
 	void Reset()
 	{
 		this.iDoor_Spawn 		= -1;
 		this.iDoor_Rescue 		= -1;
+		this.iRefs_Spawn 		= -1;
+		this.iRefs_Rescue 		= -1;
+		this.iEntTrigger 		= -1;
+		this.iConfigPos 		= -1;
+		
 		this.bIsRound_End 		= true;
+		this.bIsDamage_Rescue	= false;
 		this.bIsRound_Finale 	= false;
 		this.bIsFindDoorInit	= false;
-		this.bIsDamage_Rescue	= false;
 		
-		this.fPos_Spawn		= view_as<float>({ 0.0, 0.0, 0.0 });
+		this.fPos_Spawn			= view_as<float>({ 0.0, 0.0, 0.0 });
 		this.fPos_Rescue		= view_as<float>({ 0.0, 0.0, 0.0 });
 
 		for( int i = 0; i < TIMER_LENGTH; i++ )
@@ -365,7 +372,7 @@ void UpdateCvar()
 	g_fCvar_CheckpoinCountdown	= g_ConVarSafeHazard_CheckpoinCountdown.FloatValue;
 	g_bCvar_NotifyExit			= g_ConVarSafeHazard_ExitMsg.BoolValue;
 	g_bCvar_DamageBot			= g_ConVarSafeHazard_IsDamageBot.BoolValue;
-	g_bCvar_IsDebugging			= g_ConVarSafeHazard_IsDebugging.BoolValue;
+	
 	g_iCvar_Notify_Total = g_iCvar_NotifySpawn1 + g_iCvar_NotifySpawn2;
 	
 	char colorBuff[32];
@@ -376,6 +383,59 @@ void UpdateCvar()
 	g_iCvar_BloodColor[1] = StringToInt( colorName[1] );
 	g_iCvar_BloodColor[2] = StringToInt( colorName[2] );
 	g_iCvar_BloodColor[3] = 100;
+	
+	// developer toggle live entity debug and development
+	if( g_bCvar_IsDebugging != g_ConVarSafeHazard_IsDebugging.BoolValue )
+	{
+		g_bCvar_IsDebugging = g_ConVarSafeHazard_IsDebugging.BoolValue;
+		
+		if( g_bCvar_IsDebugging )
+		{
+			if( g_EMEntity.iEntTrigger != -1 )
+			{
+				//ToggleGlowEnable( g_EMEntity.iEntTrigger, view_as<int>({ 000, 255, 000 }), true );
+				delete g_EMEntity.hTimer[TIMER_LASER];
+				g_EMEntity.hTimer[TIMER_LASER] = CreateTimer( 0.3, Timer_ShowBeam, EntIndexToEntRef( g_EMEntity.iEntTrigger ), TIMER_REPEAT );
+			}
+			if( g_EMEntity.iDoor_Spawn != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iDoor_Spawn, view_as<int>({ 000, 255, 000 }), true );
+			}
+			if( g_EMEntity.iDoor_Rescue != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iDoor_Rescue, view_as<int>({ 000, 255, 000 }), true );
+			}
+			if( g_EMEntity.iRefs_Spawn != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iRefs_Spawn, view_as<int>({ 000, 255, 000 }), true );
+			}
+			if( g_EMEntity.iRefs_Rescue != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iRefs_Rescue, view_as<int>({ 000, 255, 000 }), true );
+			}
+		}
+		else
+		{
+			delete g_EMEntity.hTimer[TIMER_LASER];
+			
+			if( g_EMEntity.iDoor_Spawn != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iDoor_Spawn, view_as<int>({ 0, 0, 0 }), false );
+			}
+			if( g_EMEntity.iDoor_Rescue != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iDoor_Rescue, view_as<int>({ 0, 0, 0 }), false );
+			}
+			if( g_EMEntity.iRefs_Spawn != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iRefs_Spawn, view_as<int>({ 000, 255, 000 }), false );
+			}
+			if( g_EMEntity.iRefs_Rescue != -1 )
+			{
+				ToggleGlowEnable( g_EMEntity.iRefs_Rescue, view_as<int>({ 000, 255, 000 }), false );
+			}
+		}
+	}
 }
 
 public Action Command_ForceEnter_CheckpointRoom( int client, int args )
@@ -527,6 +587,12 @@ public Action Command_DeveloperBoundingBox( int client, int args )
 		return Plugin_Handled;
 	}
 	
+	if ( !g_bCvar_IsDebugging )
+	{
+		ReplyToCommand( client, "[SAFEROOM]: Debugging mode disabled!!" );
+		return Plugin_Handled;
+	}
+	
 	if ( args < 1 )
 	{
 		if( g_iEntityTest == -1 || !IsValidEntity( g_iEntityTest ))
@@ -542,7 +608,7 @@ public Action Command_DeveloperBoundingBox( int client, int args )
 				g_iEntityTest = CreateTouchTrigger( g_sDummyModel[MDL_SENSOR1], eyeBuf, g_mvecMins , g_mvecMaxs );
 				if( g_iEntityTest != -1 )
 				{
-					CreateTimer( 0.3, TimerBeam, EntIndexToEntRef( g_iEntityTest ), TIMER_REPEAT);
+					CreateTimer( 0.3, Timer_ShowBeam, EntIndexToEntRef( g_iEntityTest ), TIMER_REPEAT);
 					ReplyToCommand( client, "\x01[SAFEROOM]: Bounding box created!!" );
 				}
 				else
@@ -555,7 +621,7 @@ public Action Command_DeveloperBoundingBox( int client, int args )
 		else
 		{
 			ReplyToCommand( client, "\x01[SAFEROOM]: \x04srh_box \x01to create bounding box" );
-			ReplyToCommand( client, "\x01[SAFEROOM]: \x04srh_box 0 \x01box movement, number is movement type" );
+			ReplyToCommand( client, "\x01[SAFEROOM]: \x04srh_box 0 100 \x01moving, arg1 type, arg2 value" );
 		}
 		return Plugin_Handled;
 	}
@@ -564,12 +630,21 @@ public Action Command_DeveloperBoundingBox( int client, int args )
 	GetCmdArg( 1, arg1, sizeof( arg1 ));
 	int type = StringToInt( arg1 );
 	
+	//====== reverse nojutsu ==
+	if( type == -1 )
+	{
+		AcceptEntityInput( g_iEntityTest, "Kill" );
+		
+		g_iEntityTest = -1;
+		
+		ReplyToCommand( client, "\x01[SAFEROOM]: \x01custom bounding box deleted" );
+		return Plugin_Handled;
+	}
+	
 	GetCmdArg( 2, arg1, sizeof( arg1 ));
 	float size = StringToFloat( arg1 );
 	
 	Get_EntityLocation( g_iEntityTest, g_fPos, g_fAng );
-	
-	AcceptEntityInput( g_iEntityTest, "Kill" );
 	
 	//====== thick ==========
 	if( type == 0 )
@@ -631,14 +706,13 @@ public Action Command_DeveloperBoundingBox( int client, int args )
 		g_fPos[1] -= size;
 	}
 	
-	g_iEntityTest = CreateTouchTrigger( g_sDummyModel[MDL_SENSOR1], g_fPos, g_mvecMins , g_mvecMaxs );
-	if( g_iEntityTest != -1 )
-	{
-		CreateTimer( 0.3, TimerBeam, EntIndexToEntRef( g_iEntityTest ), TIMER_REPEAT );
-	}
+	SetEntPropVector( g_iEntityTest, Prop_Send, "m_vecMins", g_mvecMins );
+	SetEntPropVector( g_iEntityTest, Prop_Send, "m_vecMaxs", g_mvecMaxs );
+	TeleportEntity( g_iEntityTest, g_fPos, g_fAng, NULL_VECTOR );
 	
-	PrintToChat( client, "Current Map:  %s", g_EMEntity.sCurrentMap );
+	PrintToChat( client, "Map: %s", g_EMEntity.sCurrentMap );
 	PrintToChat( client, "Pos: %f | %f | %f", g_fPos[0], g_fPos[1], g_fPos[2] );
+	PrintToChat( client, "Ang: %f | %f | %f", g_fAng[0], g_fAng[1], g_fAng[2] );
 	PrintToChat( client, "Min: %f | %f | %f", g_mvecMins[0], g_mvecMins[1], g_mvecMins[2] );
 	PrintToChat( client, "Max: %f | %f | %f", g_mvecMaxs[0], g_mvecMaxs[1], g_mvecMaxs[2] );
 	PrintToChat( client, " \n" );
@@ -664,12 +738,12 @@ public void OnMapStart()
 	g_iMaterialHalo		= PrecacheModel( MAT_HALO );
 	g_iMaterialBlood	= PrecacheModel( MAT_BLOOD );
 	
-	g_EMEntity.iConfPos = -1;
+	g_EMEntity.iConfigPos = -1;
 	for( int i = 0; i < sizeof( g_sMapConfig ); i++ )
 	{
 		if( StrCmp( g_sMapConfig[i], g_EMEntity.sCurrentMap ))
 		{
-			g_EMEntity.iConfPos = i;
+			g_EMEntity.iConfigPos = i;
 			break;
 		}
 	}
@@ -916,20 +990,25 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 					
 					Create_EntityRef( client );
 					
-					if( g_EMEntity.iConfPos != -1 )
+					if( g_EMEntity.iConfigPos != -1 )
 					{
 						float pos[3];
 						float min[3];
 						float max[3];
 						
-						pos = view_as<float>( g_fMapsVec[g_EMEntity.iConfPos][VEC_POS] );
-						min = view_as<float>( g_fMapsVec[g_EMEntity.iConfPos][VEC_MIN] );
-						max = view_as<float>( g_fMapsVec[g_EMEntity.iConfPos][VEC_MAX] );
+						int index = g_EMEntity.iConfigPos;
+						
+						pos = view_as<float>( g_fMapsVec[index][VEC_POS] );
+						min = view_as<float>( g_fMapsVec[index][VEC_MIN] );
+						max = view_as<float>( g_fMapsVec[index][VEC_MAX] );
 						
 						int sensor = CreateTouchTrigger( g_sDummyModel[MDL_SENSOR1], pos, min , max );
 						if( sensor != -1 && g_bCvar_IsDebugging )
 						{
-							CreateTimer( 0.3, TimerBeam, EntIndexToEntRef( sensor ), TIMER_REPEAT);
+							g_EMEntity.iEntTrigger = sensor;
+							
+							delete g_EMEntity.hTimer[TIMER_LASER];
+							g_EMEntity.hTimer[TIMER_LASER] = CreateTimer( 0.3, Timer_ShowBeam, EntIndexToEntRef( sensor ), TIMER_REPEAT);
 						}
 					}
 				}
@@ -1244,7 +1323,7 @@ void Create_EntityRef( int client )
 		if( g_bCvar_ReferanceToy )
 		{
 			int rand = GetRandomInt( 0, 2 );
-			Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Spawn, ang );
+			g_EMEntity.iRefs_Spawn = Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Spawn, ang );
 		}
 	}
 	
@@ -1277,7 +1356,7 @@ void Create_EntityRef( int client )
 		if( g_bCvar_ReferanceToy )
 		{
 			int rand = GetRandomInt( 0, 2 );
-			Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Rescue, ang );
+			g_EMEntity.iRefs_Rescue = Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Rescue, ang );
 		}
 	}
 }
@@ -1672,18 +1751,18 @@ stock void ToggleGlowEnable( int entity, int color[3], bool enable )
 	SetEntProp( entity, Prop_Send, "m_glowColorOverride", m_glowcolor );
 }
 
-public Action TimerBeam( Handle timer, any entref )
+public Action Timer_ShowBeam( Handle timer, any entref )
 {
 	int entity = EntRefToEntIndex( entref );
 	if( IsValidEntity( entity ))
 	{
 		float vMaxs[3], vMins[3], vPos[3];
-		GetEntPropVector(entity, Prop_Send, "m_vecOrigin", vPos);
-		GetEntPropVector(entity, Prop_Send, "m_vecMins", vMins);
-		GetEntPropVector(entity, Prop_Send, "m_vecMaxs", vMaxs);
-		AddVectors(vPos, vMins, vMins);
-		AddVectors(vPos, vMaxs, vMaxs);
-		TE_SendBox(vMins, vMaxs);
+		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vPos );
+		GetEntPropVector( entity, Prop_Send, "m_vecMins", vMins );
+		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vMaxs );
+		AddVectors( vPos, vMins, vMins );
+		AddVectors( vPos, vMaxs, vMaxs );
+		TE_SendBox( vMins, vMaxs );
 		return Plugin_Continue;
 	}
 	return Plugin_Stop;
