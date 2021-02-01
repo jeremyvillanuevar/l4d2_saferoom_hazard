@@ -200,8 +200,8 @@ char  g_sMapConfig[][] =
 	"c2m2_fairgrounds",
 	"c2m3_coaster",
 	"c2m4_barns",
-	"c2m5_concert",			//<< rotation 
-	"c3m1_plankcountry",	//<< rotation 
+	"c2m5_concert",
+	"c3m1_plankcountry",
 	"c3m2_swamp",
 	"c3m3_shantytown",
 	"c3m4_plantation",
