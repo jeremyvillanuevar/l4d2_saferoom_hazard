@@ -30,7 +30,7 @@ v 1.0.1
 #include <sdkhooks>
 #include <saferoom_config.sp>
 
-#define COLLISION_GROUP_NPC	9
+#define DMG_VALUE			999999
 
 #define TEAM_SURVIVOR		2
 #define TEAM_INFECTED		3
@@ -130,27 +130,26 @@ public void OnPluginStart()
 	AutoExecConfig( true, "l4d2_saferoom_hazard" );
 
 	
-	HookEvent( "survivor_rescued",			Event_PlayerRescued );
+	HookEvent( "survivor_rescued",			EVENT_PlayerRescued );
 	HookEvent( "player_spawn",				EVENT_PlayerSpawn );
 	HookEvent( "round_end",					EVENT_RoundEnd );
 	//HookEvent( "mission_lost",			EVENT_RoundEnd );
 	HookEvent( "finale_start",				EVENT_Finale );
 	HookEvent( "door_close",				EVENT_DoorClose );
-	HookEvent( "player_death",				Event_PlayerDeath );
-	HookEvent( "bot_player_replace",		Event_BotPlayerReplace );
-	HookEvent( "player_bot_replace",		Event_BotPlayerReplace );
-	HookEvent( "defibrillator_begin",		Event_Defibrillator );
-	HookEvent( "defibrillator_used_fail",	Event_Defibrillator );
-	HookEvent( "defibrillator_interrupted",	Event_Defibrillator );
-	HookEvent( "defibrillator_used",		Event_Defibrillator );
-	HookEvent( "finale_escape_start",		Event_FinaleStart );
-	HookEvent( "finale_vehicle_ready",		Event_FinaleStart );
+	HookEvent( "player_death",				EVENT_PlayerDeath );
+	HookEvent( "bot_player_replace",		EVENT_BotPlayerReplace );
+	HookEvent( "player_bot_replace",		EVENT_BotPlayerReplace );
+	HookEvent( "defibrillator_begin",		EVENT_Defibrillator );
+	HookEvent( "defibrillator_used_fail",	EVENT_Defibrillator );
+	HookEvent( "defibrillator_interrupted",	EVENT_Defibrillator );
+	HookEvent( "defibrillator_used",		EVENT_Defibrillator );
+	HookEvent( "finale_escape_start",		EVENT_FinaleStart );
+	HookEvent( "finale_vehicle_ready",		EVENT_FinaleStart );
 	
 
 	//================= Admin and developer command =================//
 	RegAdminCmd( "srh_enter",	Command_ForceEnter_CheckpointRoom,	ADMFLAG_GENERIC, "Admin jump command. Force everyone into checkpoint saferoom." );
 	RegAdminCmd( "srh_jump",	Command_ForceEnter_JumpSaferoom,	ADMFLAG_GENERIC, "Admin jump command. 0: spawn | 1: checkpoint | 2: current position." );
-	RegAdminCmd( "srh_check",	Command_DeveloperEntityCheck,		ADMFLAG_GENERIC, "Admin command. Check entity class and model name." );
 	RegAdminCmd( "srh_box",		Command_DeveloperBoundingBox,		ADMFLAG_GENERIC, "Admin command. Prototype trigger touch bounding box. Range 0 ~ 6" );
 	
 	/*
@@ -242,7 +241,7 @@ public void OnMapStart()
 	g_EMEntity.iIndexRotate = -1;
 	for( int i = 0; i < sizeof( g_sCheckpointMapName ); i++ )
 	{
-		if( StrCmp( g_EMEntity.sCurrentMap, g_sCheckpointMapName[i] ))
+		if( ChrCmp( g_EMEntity.sCurrentMap, g_sCheckpointMapName[i] ))
 		{
 			g_EMEntity.iIndexRotate = i;
 			Print_ServerText( "Checkpoint Array Index Found!!", g_bCvar_IsDebugging );
@@ -253,7 +252,7 @@ public void OnMapStart()
 	g_EMEntity.iIndexSpawn = -1;
 	for( int i = 0; i < sizeof( g_sMapConfig ); i++ )
 	{
-		if( StrCmp( g_EMEntity.sCurrentMap, g_sMapConfig[i] ))
+		if( ChrCmp( g_EMEntity.sCurrentMap, g_sMapConfig[i] ))
 		{
 			g_EMEntity.iIndexSpawn = i;
 			Print_ServerText( "Spawn Array Index Found!!", g_bCvar_IsDebugging );
@@ -276,22 +275,7 @@ public void OnClientPutInServer( int client )
 	if ( client > 0 )
 	{
 		g_CMClient[client].Reset();
-		
-		// super versus and bot teleport fixes
-		//SDKHook( client, SDKHook_StartTouch, OnTeleport_OnStartTouched );
 	}
-}
-
-public Action OnTeleport_OnStartTouched( int client, int other )
-{
-	PrintToChatAll( "Touch trigged: client %d | other %d", client, other );
-	if( client > 0 && Survivor_IsValid( other ) && IsFakeClient( client ) && !IsFakeClient( other ))
-	{
-		// super versus and bot teleport fixes
-		g_CMClient[client].iStateRoom = g_CMClient[other].iStateRoom;
-		//PrintToChatAll( "%N touched %N", other, client );
-	}
-	return Plugin_Continue;
 }
 
 public void OnClientDisconnect( int client )
@@ -305,25 +289,10 @@ public void OnEntityCreated( int entity, const char[] classname )
 	
 	if( IsValidEntity( entity ))
 	{
-		if( StrCmp( classname, "infected" ) || StrCmp( classname, "witch" ))
+		if( ChrCmp( classname, "infected" ) || ChrCmp( classname, "witch" ))
 		{
-			CreateTimer( 0.3, Timer_TeleportInfected, EntIndexToEntRef( entity ), TIMER_FLAG_NO_MAPCHANGE );
+			CreateTimer( 0.3, Timer_KillICommonWitch, EntIndexToEntRef( entity ), TIMER_FLAG_NO_MAPCHANGE );
 		}
-	}
-}
-
-public Action Timer_TeleportInfected( Handle timer, any entref )
-{
-	int inf = EntRefToEntIndex( entref );
-	if( IsValidEntity( inf ))
-	{
-		float pos[3];
-		GetEntPropVector( inf, Prop_Send, "m_vecOrigin", pos );
-		pos[0] = 0.0;
-		pos[1] = 0.0;
-		pos[2] -= 5000.0;
-		TeleportEntity( inf, pos, NULL_VECTOR, NULL_VECTOR );
-		RemoveEdict( inf );
 	}
 }
 
@@ -348,7 +317,7 @@ void UpdateCvar()
 	g_fCvar_CheckpoinCountdown	= g_ConVarSafeHazard_CheckpoinCountdown.FloatValue;
 	g_bCvar_NotifyExit			= g_ConVarSafeHazard_ExitMsg.BoolValue;
 	g_bCvar_DamageBot			= g_ConVarSafeHazard_IsDamageBot.BoolValue;
-	g_bCvar_EnableEnemy		= g_ConVarSafeHazard_DisableEnemy.BoolValue;
+	g_bCvar_EnableEnemy			= g_ConVarSafeHazard_DisableEnemy.BoolValue;
 	
 	g_iCvar_Notify_Total = g_iCvar_NotifySpawn1 + g_iCvar_NotifySpawn2;
 	
@@ -371,7 +340,7 @@ void UpdateCvar()
 	g_iCvar_BloodColor[2] = StringToInt( colorName[2] );
 	g_iCvar_BloodColor[3] = 100;
 	
-	// developer toggle live entity debug and development
+	// toggle live entity debug and development
 	if( g_bCvar_IsDebugging != g_ConVarSafeHazard_IsDebugging.BoolValue )
 	{
 		g_bCvar_IsDebugging = g_ConVarSafeHazard_IsDebugging.BoolValue;
@@ -478,8 +447,8 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 	
 	if ( args < 1 )
 	{
-		ReplyToCommand( client, "\x01[SAFEROOM]: usage \x04srh_jump 0 \x01for spawn are jump" );
-		ReplyToCommand( client, "\x01[SAFEROOM]: usage \x04srh_jump 1 \x01for checkpoint are jump" );
+		ReplyToCommand( client, "\x01[SAFEROOM]: usage \x04srh_jump 0 \x01for spawn area jump" );
+		ReplyToCommand( client, "\x01[SAFEROOM]: usage \x04srh_jump 1 \x01for checkpoint area jump" );
 		return Plugin_Handled;
 	}
 	
@@ -498,7 +467,7 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 		}
 		else
 		{
-			ReplyToCommand( client, "[SAFEROOM]: Spawn are referance not found!!" );
+			ReplyToCommand( client, "[SAFEROOM]: Invalid Spawn pos referance!!" );
 		}
 	}
 	else if( type == 1 )
@@ -513,7 +482,7 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 		}
 		else
 		{
-			ReplyToCommand( client, "[SAFEROOM]: Checkpoint area referance not found!!" );
+			ReplyToCommand( client, "[SAFEROOM]: Invalid Checkpoint pos referance!!" );
 		}
 	}
 	else if( type == 2 )
@@ -537,37 +506,6 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 	{
 		ReplyToCommand( client, "\x01[SAFEROOM]: only \x04srh_jump 0 \x01or \x04srh_jump 1 \x01or \x04srh_jump 2\x01valid command" );
 	}
-	return Plugin_Handled;
-}
-
-public Action Command_DeveloperEntityCheck( int client, int args )
-{
-	if ( client < 1 )
-	{
-		ReplyToCommand( client, "[SAFEROOM]: Command only valid in game!!" );
-		return Plugin_Handled;
-	}
-	
-	if ( !g_bCvar_IsDebugging )
-	{
-		ReplyToCommand( client, "[SAFEROOM]: Debugging mode disabled!!" );
-		return Plugin_Handled;
-	}
-	
-	float eyePos[3];
-	float eyeAng[3];
-	GetClientEyePosition( client, eyePos );
-	GetClientEyeAngles( client, eyeAng );
-	
-	int entity = TraceRay_GetEntity( eyePos, eyeAng, client );
-	if( entity == -1 ) return Plugin_Handled;
-	
-	char charBuff[PLATFORM_MAX_PATH];
-	GetEntityClassname( entity, charBuff, sizeof( charBuff ));
-	PrintToChat( client, "Classname: %s", charBuff );
-	
-	GetEntPropString( entity, Prop_Data, "m_ModelName", charBuff, sizeof( charBuff ));
-	PrintToChat( client, "ModelName: %s", charBuff );
 	return Plugin_Handled;
 }
 
@@ -787,7 +725,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 	}
 }
 
-public void Event_PlayerRescued( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_PlayerRescued( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
@@ -806,7 +744,7 @@ public void Event_PlayerRescued( Event event, const char[] name, bool dontBroadc
 	}
 }
 
-public void Event_PlayerDeath( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_PlayerDeath( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
@@ -817,7 +755,7 @@ public void Event_PlayerDeath( Event event, const char[] name, bool dontBroadcas
 	}
 }
 
-public void Event_BotPlayerReplace( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_BotPlayerReplace( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
@@ -826,7 +764,7 @@ public void Event_BotPlayerReplace( Event event, const char[] name, bool dontBro
 	if ( Client_IsValid( player ) && Client_IsValid( bot ))
 	{
 		// player takeover bot
-		if( StrCmp( name, "bot_player_replace" ))
+		if( ChrCmp( name, "bot_player_replace" ))
 		{
 			g_CMClient[player].iStateRoom = g_CMClient[bot].iStateRoom;
 			g_CMClient[player].iSpawnCount = g_CMClient[bot].iSpawnCount;
@@ -836,7 +774,7 @@ public void Event_BotPlayerReplace( Event event, const char[] name, bool dontBro
 			Print_ServerText( "Player takeover Bot", g_bCvar_IsDebugging );
 		}
 		// bot takeover player
-		else if( StrCmp( name, "player_bot_replace" ))
+		else if( ChrCmp( name, "player_bot_replace" ))
 		{
 			g_CMClient[bot].iStateRoom	= g_CMClient[player].iStateRoom;
 			g_CMClient[bot].iSpawnCount = g_CMClient[player].iSpawnCount;
@@ -846,26 +784,26 @@ public void Event_BotPlayerReplace( Event event, const char[] name, bool dontBro
 	}
 }
 
-public void Event_Defibrillator( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_Defibrillator( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
 	int subject	= GetClientOfUserId( event.GetInt( "subject" ));
 	if ( Client_IsValid( subject ))
 	{
-		if( StrCmp( name, "defibrillator_begin" ))
+		if( ChrCmp( name, "defibrillator_begin" ))
 		{
-			g_CMClient[subject].bIsUseDefib = true;
+			g_CMClient[subject].bIsSkipSpawnCheck = true;
 			Print_ServerText( "Defibrillator Begin", g_bCvar_IsDebugging );
 		}
-		else if( StrCmp( name, "defibrillator_used_fail" ) || StrCmp( name, "defibrillator_interrupted" ))
+		else if( ChrCmp( name, "defibrillator_used_fail" ) || ChrCmp( name, "defibrillator_interrupted" ))
 		{
-			g_CMClient[subject].bIsUseDefib = false;
+			g_CMClient[subject].bIsSkipSpawnCheck = false;
 			Print_ServerText( "Defibrillator Fail/Interrupted", g_bCvar_IsDebugging );
 		}
-		else if( StrCmp( name, "defibrillator_used" ))
+		else if( ChrCmp( name, "defibrillator_used" ))
 		{
-			g_CMClient[subject].bIsUseDefib = false;
+			g_CMClient[subject].bIsSkipSpawnCheck = false;
 			if( !IsFakeClient( subject ))
 			{
 				Print_RespawnMessage( subject );
@@ -875,20 +813,17 @@ public void Event_Defibrillator( Event event, const char[] name, bool dontBroadc
 	}
 }
 
-
-
-// finale damage under development
-public void Event_FinaleStart( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_FinaleStart( Event event, const char[] name, bool dontBroadcast ) // finale damage under development
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
 	bool finale = false;
-	if( StrCmp( name, "finale_escape_start" ))
+	if( ChrCmp( name, "finale_escape_start" ))
 	{
 		finale = true;
 		Print_ServerText( "finale_escape_start", g_bCvar_IsDebugging );
 	}
-	else if( StrCmp( name, "finale_vehicle_ready" ))
+	else if( ChrCmp( name, "finale_vehicle_ready" ))
 	{
 		finale = true;
 		Print_ServerText( "finale_vehicle_ready", g_bCvar_IsDebugging );
@@ -908,7 +843,7 @@ public void Event_FinaleStart( Event event, const char[] name, bool dontBroadcas
 				char entity_name[250];
 				GetEntPropString( entity, Prop_Data, "m_iName", entity_name, sizeof( entity_name ));
 				//PrintToChatAll( "className: %s", entity_name );
-				if( StrCmp( entity_name, "stadium_exit_right_escape_trigger" ) || StrCmp( entity_name, "escape_right_relay" ))
+				if( ChrCmp( entity_name, "stadium_exit_right_escape_trigger" ) || ChrCmp( entity_name, "escape_right_relay" ))
 				{
 					//PrintToChatAll( "Trigger: %s", entity_name );
 					
@@ -932,7 +867,7 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 		{
 			case TEAM_SURVIVOR:
 			{
-				if( g_CMClient[client].bIsUseDefib ) return;
+				if( g_CMClient[client].bIsSkipSpawnCheck ) return;
 				
 				if( !IsFakeClient( client ))
 				{
@@ -949,7 +884,7 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 			{
 				if( g_bCvar_IsDebugging && !g_bCvar_EnableEnemy )
 				{
-					CreateTimer( 0.1, Timer_ForceInfectedSuicide, userid, TIMER_FLAG_NO_MAPCHANGE );
+					CreateTimer( 0.1, Timer_KillIInfectedTank, userid, TIMER_FLAG_NO_MAPCHANGE );
 				}
 			}
 		}
@@ -958,7 +893,7 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 
 
 /////////////////////////////////////////////////////////////
-//================ Excape Vehicle Trigger =================//
+//================ Finale Vehicle Trigger =================//
 /////////////////////////////////////////////////////////////
 public Action FinaleArea_OnStartTouch( int entity, int client )
 {
@@ -989,7 +924,7 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) < DIST_RADIUS )
 	{
 		// set client no longer joined in midgame and damage applied
-		SetClintJoint( client );
+		SetClientJoinStatus( client );
 		
 		StopBurningSound( client );
 		g_CMClient[client].iStateRoom = ROOM_STATE_RESCUE;
@@ -1009,49 +944,12 @@ public void EntityOutput_RescueArea_OnEndTouch( const char[] output, int caller,
 	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) < DIST_RADIUS )
 	{
 		// set client no longer joined in midgame and damage applied
-		SetClintJoint( client );
+		SetClientJoinStatus( client );
 		
 		g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
 		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Checkpoint Area", client );
 		
 		CheckRescueArea();
-	}
-}
-
-void CheckRescueArea()
-{
-	if( !g_EMEntity.bIsDamage_Rescue && g_EMEntity.hTimer[TIMER_RESCUE] == null )
-	{
-		float pos[3];
-		bool start = true;
-		for( int i = 1; i <= MaxClients; i++ )
-		{
-			if( Survivor_InGame( i ))
-			{
-				GetEntPropVector( i, Prop_Send, "m_vecOrigin", pos );
-				if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > g_fCvar_Radius )
-				{
-					start = false;
-					break;
-				}
-			}
-		}
-		
-		if( start )
-		{
-			g_EMEntity.hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
-			if( g_bCvar_LeaveSpawnMsg )
-			{
-				for( int i = 1; i <= MaxClients; i ++ )
-				{
-					if( Survivor_InGame( i ) && !IsFakeClient( i ))
-					{
-						PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to enter Checkpoint Area!!", g_fCvar_CheckpoinCountdown );
-					}
-				}
-			}
-			Print_ServerText( "Timer Rescue Damage has started", g_bCvar_IsDebugging );
-		}
 	}
 }
 
@@ -1074,7 +972,7 @@ public Action SpawnArea_OnStartTouched( int entity, int client )
 		if( GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_RADIUS )
 		{
 			// set client no longer joined in midgame and damage applied
-			SetClintJoint( client );
+			SetClientJoinStatus( client );
 			
 			g_CMClient[client].iStateRoom = ROOM_STATE_SPAWN;
 			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Spawn Area", client );
@@ -1100,7 +998,7 @@ public Action SpawnArea_OnEndTouch( int entity, int client )
 			g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
 			
 			// set client no longer joined in midgame and damage applied
-			SetClintJoint( client );
+			SetClientJoinStatus( client );
 			
 			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Spawn Area", client );
 			
@@ -1116,6 +1014,10 @@ public Action SpawnArea_OnEndTouch( int entity, int client )
 	return Plugin_Continue;
 }
 
+
+/////////////////////////////////////////////////////////////
+//========================= Timers ========================//
+/////////////////////////////////////////////////////////////
 public Action Timer_RescueCountdown( Handle timer )
 {
 	for( int i = 1; i <= MaxClients; i ++ )
@@ -1246,18 +1148,33 @@ public Action Timer_GlobalDamage( Handle timer )
 	return Plugin_Continue;
 }
 
-public Action Timer_ForceInfectedSuicide( Handle timer, any userid )
+public Action Timer_KillICommonWitch( Handle timer, any entref )
 {
-	int client = GetClientOfUserId( userid );
-	if ( Infected_IsValid( client ))
+	int infected = EntRefToEntIndex( entref );
+	if( IsValidEntity( infected ))
 	{
 		float pos[3];
-		GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
+		GetEntPropVector( infected, Prop_Send, "m_vecOrigin", pos );
 		pos[0] = 0.0;
 		pos[1] = 0.0;
 		pos[2] -= 5000.0;
-		TeleportEntity( client, pos, NULL_VECTOR, NULL_VECTOR );
-		ForcePlayerSuicide( client );
+		TeleportEntity( infected, pos, NULL_VECTOR, NULL_VECTOR );
+		Create_PointHurt( infected, FindRandomHumanPlayers(), DMG_VALUE, DMG_GENERIC, "" );
+	}
+}
+
+public Action Timer_KillIInfectedTank( Handle timer, any userid )
+{
+	int victim = GetClientOfUserId( userid );
+	if ( Infected_IsValid( victim ))
+	{
+		float pos[3];
+		GetEntPropVector( victim, Prop_Send, "m_vecOrigin", pos );
+		pos[0] = 0.0;
+		pos[1] = 0.0;
+		pos[2] -= 5000.0;
+		TeleportEntity( victim, pos, NULL_VECTOR, NULL_VECTOR );
+		Create_PointHurt( victim, FindRandomHumanPlayers(), DMG_VALUE, DMG_GENERIC, "" );
 	}
 	return Plugin_Stop;
 }
@@ -1266,7 +1183,44 @@ public Action Timer_ForceInfectedSuicide( Handle timer, any userid )
 /////////////////////////////////////////////////////////////
 //====================== Function =========================//
 /////////////////////////////////////////////////////////////
-void SetClintJoint( int client )
+void CheckRescueArea()
+{
+	if( !g_EMEntity.bIsDamage_Rescue && g_EMEntity.hTimer[TIMER_RESCUE] == null )
+	{
+		float pos[3];
+		bool start = true;
+		for( int i = 1; i <= MaxClients; i++ )
+		{
+			if( Survivor_InGame( i ))
+			{
+				GetEntPropVector( i, Prop_Send, "m_vecOrigin", pos );
+				if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) > g_fCvar_Radius )
+				{
+					start = false;
+					break;
+				}
+			}
+		}
+		
+		if( start )
+		{
+			g_EMEntity.hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
+			if( g_bCvar_LeaveSpawnMsg )
+			{
+				for( int i = 1; i <= MaxClients; i ++ )
+				{
+					if( Survivor_InGame( i ) && !IsFakeClient( i ))
+					{
+						PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to enter Checkpoint Area!!", g_fCvar_CheckpoinCountdown );
+					}
+				}
+			}
+			Print_ServerText( "Timer Rescue Damage has started", g_bCvar_IsDebugging );
+		}
+	}
+}
+
+void SetClientJoinStatus( int client )
 {
 	// set client no longer joined in midgame and damage applied
 	if( g_CMClient[client].bIsJoinGame )
@@ -1304,7 +1258,7 @@ void Create_MapTouchTrigger( int client )
 			if( g_EMEntity.iDoor_Spawn == -1 )
 			{
 				GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
-				if( StrCmp( m_ModelName, MDL_SPAWNROOM1 ) || StrCmp( m_ModelName, MDL_SPAWNROOM2 ))
+				if( ChrCmp( m_ModelName, MDL_SPAWNROOM1 ) || ChrCmp( m_ModelName, MDL_SPAWNROOM2 ))
 				{
 					g_EMEntity.iDoor_Spawn = entity;
 					Print_ServerText( "Spawn Door found", g_bCvar_IsDebugging );
@@ -1322,7 +1276,7 @@ void Create_MapTouchTrigger( int client )
 			if( g_EMEntity.iDoor_Rescue == -1 )
 			{
 				GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
-				if( StrCmp( m_ModelName, MDL_CHECKROOM1 ) || StrCmp( m_ModelName, MDL_CHECKROOM2 ))
+				if( ChrCmp( m_ModelName, MDL_CHECKROOM1 ) || ChrCmp( m_ModelName, MDL_CHECKROOM2 ))
 				{
 					g_EMEntity.iDoor_Rescue = entity;
 					Print_ServerText( "Checkpoint Door found", g_bCvar_IsDebugging );
@@ -1346,7 +1300,7 @@ void Create_MapTouchTrigger( int client )
 		
 		// spawn door offset setting
 		int type;
-		if( StrCmp( m_ModelName, MDL_SPAWNROOM1 ))
+		if( ChrCmp( m_ModelName, MDL_SPAWNROOM1 ))
 		{
 			type = 1;
 		}
@@ -1502,7 +1456,7 @@ void Create_DamageEffect( int victim, int attacker, int damage )
 void Create_PointHurt( int victim, int attacker, int damage, int dmg_type, const char[] weapon ) // Because I love you.
 {
 	// event "player_hurt" trigged by this point hurt
-	if( victim > 0 && GetEntProp( victim, Prop_Data, "m_iHealth" ) > 0 && attacker != -1 && damage > 0 )
+	if( victim > 0 && damage > 0 )
 	{
 		char dmg_str[16];
 		IntToString( damage, dmg_str, 16 );
@@ -1667,7 +1621,7 @@ void Get_EntityLocation( int entity, float pos[3], float ang[3] )
 	GetEntPropVector( entity, Prop_Data, "m_angRotation", ang );
 }
 
-bool StrCmp( const char[] str1, const char[] str2 )
+bool ChrCmp( const char[] str1, const char[] str2 )
 {
 	return ( strcmp( str1, str2, false ) == 0 );
 }
@@ -1736,7 +1690,7 @@ stock int GetHumanSpectator( int bot )
 stock bool TraceRay_GetEndpoint( float startPos[3], float startAng[3], any data, float outputPos[3] )
 {
 	bool havepos = false;
-	Handle trace = TR_TraceRayFilterEx( startPos, startAng, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceEntityFilterPlayers, data );
+	Handle trace = TR_TraceRayFilterEx( startPos, startAng, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceFilterPlayers, data );
 	if( TR_DidHit( trace ))
 	{ 
 		TR_GetEndPosition( outputPos, trace );
@@ -1746,19 +1700,7 @@ stock bool TraceRay_GetEndpoint( float startPos[3], float startAng[3], any data,
 	return havepos;
 }
 
-stock int TraceRay_GetEntity( float startPos[3], float startAng[3], any data )
-{
-	int entity = -1;
-	Handle trace = TR_TraceRayFilterEx( startPos, startAng, MASK_SOLID_BRUSHONLY, RayType_Infinite, TraceEntityFilterPlayers, data );
-	if( TR_DidHit( trace ))
-	{ 
-		entity = TR_GetEntityIndex( trace );
-	}
-	delete trace;
-	return entity;
-}
-
-stock bool TraceEntityFilterPlayers( int entity, int contentsMask, any data )
+stock bool TraceFilterPlayers( int entity, int contentsMask, any data )
 {
 	return ( entity > MaxClients && entity != data );
 }
@@ -1778,19 +1720,45 @@ stock void ToggleGlowEnable( int entity, int color[3], bool enable )
 	SetEntProp( entity, Prop_Send, "m_glowColorOverride", m_glowcolor );
 }
 
+stock int FindRandomHumanPlayers()
+{
+	int count = -1;
+	int buff[MAXPLAYERS+1];
+	for( int i = 1; i <= MaxClients; i++ )
+	{
+		if( IsClientInGame( i ) && !IsFakeClient( i ) && GetClientTeam( i ) == 2 )
+		{
+			if( count == -1 )
+			{
+				count = 0;
+			}
+			buff[count] = i;
+			count++;
+		}
+	}
+	
+	if( count == -1 )
+	{
+		return count;
+	}
+	
+	count -= 1;
+	return buff[ GetRandomInt( 0, count ) ];
+}
+
 // @silver [ANY] Trigger Multiple Commands
 public Action Timer_DeveloperShowBeam1( Handle timer, any entref )	
 {
 	int entity = EntRefToEntIndex( entref );
 	if( g_EMEntity.hTimer[TIMER_LASER1] == timer && IsValidEntity( entity ))
 	{
-		float vMaxs[3], vMins[3], vPos[3];
-		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vPos );
-		GetEntPropVector( entity, Prop_Send, "m_vecMins", vMins );
-		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vMaxs );
-		AddVectors( vPos, vMins, vMins );
-		AddVectors( vPos, vMaxs, vMaxs );
-		TE_SendBox( vMins, vMaxs );
+		float vecMaxs[3], vecMins[3], vecPos[3];
+		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vecPos );
+		GetEntPropVector( entity, Prop_Send, "m_vecMins", vecMins );
+		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vecMaxs );
+		AddVectors( vecPos, vecMins, vecMins );
+		AddVectors( vecPos, vecMaxs, vecMaxs );
+		TE_SendBox( vecMins, vecMaxs );
 		return Plugin_Continue;
 	}
 	// development sanity check, functionality dosent matter, handle leak matters.
@@ -1803,13 +1771,13 @@ public Action Timer_DeveloperShowBeam2( Handle timer, any entref )
 	int entity = EntRefToEntIndex( entref );
 	if( g_EMEntity.hTimer[TIMER_LASER2] == timer && IsValidEntity( entity ))
 	{
-		float vMaxs[3], vMins[3], vPos[3];
-		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vPos );
-		GetEntPropVector( entity, Prop_Send, "m_vecMins", vMins );
-		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vMaxs );
-		AddVectors( vPos, vMins, vMins );
-		AddVectors( vPos, vMaxs, vMaxs );
-		TE_SendBox( vMins, vMaxs );
+		float vecMaxs[3], vecMins[3], vecPos[3];
+		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vecPos );
+		GetEntPropVector( entity, Prop_Send, "m_vecMins", vecMins );
+		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vecMaxs );
+		AddVectors( vecPos, vecMins, vecMins );
+		AddVectors( vecPos, vecMaxs, vecMaxs );
+		TE_SendBox( vecMins, vecMaxs );
 		return Plugin_Continue;
 	}
 	// development sanity check, functionality dosent matter, handle leak matters.
@@ -1817,38 +1785,38 @@ public Action Timer_DeveloperShowBeam2( Handle timer, any entref )
 	return Plugin_Stop;
 }
 
-stock void TE_SendBox( float vMins[3], float vMaxs[3] )
+stock void TE_SendBox( float vecMins[3], float vecMaxs[3] )
 {
 	float vPos1[3], vPos2[3], vPos3[3], vPos4[3], vPos5[3], vPos6[3];
-	vPos1 = vMaxs;
-	vPos1[0] = vMins[0];
-	vPos2 = vMaxs;
-	vPos2[1] = vMins[1];
-	vPos3 = vMaxs;
-	vPos3[2] = vMins[2];
-	vPos4 = vMins;
-	vPos4[0] = vMaxs[0];
-	vPos5 = vMins;
-	vPos5[1] = vMaxs[1];
-	vPos6 = vMins;
-	vPos6[2] = vMaxs[2];
-	TE_SendBeam(vMaxs, vPos1);
-	TE_SendBeam(vMaxs, vPos2);
-	TE_SendBeam(vMaxs, vPos3);
-	TE_SendBeam(vPos6, vPos1);
-	TE_SendBeam(vPos6, vPos2);
-	TE_SendBeam(vPos6, vMins);
-	TE_SendBeam(vPos4, vMins);
-	TE_SendBeam(vPos5, vMins);
-	TE_SendBeam(vPos5, vPos1);
-	TE_SendBeam(vPos5, vPos3);
-	TE_SendBeam(vPos4, vPos3);
-	TE_SendBeam(vPos4, vPos2);
+	vPos1 = vecMaxs;
+	vPos1[0] = vecMins[0];
+	vPos2 = vecMaxs;
+	vPos2[1] = vecMins[1];
+	vPos3 = vecMaxs;
+	vPos3[2] = vecMins[2];
+	vPos4 = vecMins;
+	vPos4[0] = vecMaxs[0];
+	vPos5 = vecMins;
+	vPos5[1] = vecMaxs[1];
+	vPos6 = vecMins;
+	vPos6[2] = vecMaxs[2];
+	TE_SendBeam( vecMaxs, vPos1 );
+	TE_SendBeam( vecMaxs, vPos2 );
+	TE_SendBeam( vecMaxs, vPos3);
+	TE_SendBeam( vPos6, vPos1 );
+	TE_SendBeam( vPos6, vPos2 );
+	TE_SendBeam( vPos6, vecMins );
+	TE_SendBeam( vPos4, vecMins );
+	TE_SendBeam( vPos5, vecMins );
+	TE_SendBeam( vPos5, vPos1 );
+	TE_SendBeam( vPos5, vPos3 );
+	TE_SendBeam( vPos4, vPos3 );
+	TE_SendBeam( vPos4, vPos2 );
 }
 
-stock void TE_SendBeam( const float vMins[3], const float vMaxs[3] )
+stock void TE_SendBeam( const float vecMins[3], const float vecMaxs[3] )
 {
-	TE_SetupBeamPoints(vMins, vMaxs, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 0.3 + 0.1, 1.0, 1.0, 1, 0.0, view_as<int>({ 0, 255, 0, 255 }), 0);
+	TE_SetupBeamPoints( vecMins, vecMaxs, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 0.3 + 0.1, 1.0, 1.0, 1, 0.0, view_as<int>({ 0, 255, 0, 255 }), 0 );
 	TE_SendToAll();
 }
 
