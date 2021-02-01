@@ -1,5 +1,11 @@
 #define PLUGIN_VERSION "1.1.0"
 /*
+=================== TODO ==================
+- radio use waiting teleport, damage.
+- rescue vehicle ready teleport, damage.
+- saferoom burning effect by LUX@ChocolateCat
+
+
 ============= version history =============
 v 1.1.0
 - creadit to @GL_INS v1.1.0 beta tester
