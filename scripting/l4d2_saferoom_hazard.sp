@@ -8,7 +8,11 @@
 
 ============= version history =============
 v 1.1.0
-- creadit to @GL_INS v1.1.0 beta tester
+- creadit:
+	@GL_INS beta tester
+	@Mart
+	@Impact
+	#Silver
 - plugins conversion to new syntax.
 - changed command for force enter.
 - change detection from radius to sdkhook sensor.
