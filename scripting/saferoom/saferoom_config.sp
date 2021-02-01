@@ -1,5 +1,5 @@
 
-//=== Constructor Movement =======//
+//=== Constructor Move Type =======//
 enum
 {
 	MOVE_DELETE,
@@ -44,16 +44,16 @@ enum struct ClientManager
 	int  iSpawnCount;
 	int	 iStateRoom;
 	bool bIsSoundBurn;
-	bool bIsSkipSpawnCheck;
+	bool bIsUsingDefib;
 	bool bIsJoinGame;
 	
 	void Reset()
 	{
-		this.iSpawnCount 	= 0;
-		this.iStateRoom 	= ROOM_STATE_OUTDOOR;
-		this.bIsSoundBurn	= false;
-		this.bIsSkipSpawnCheck	= false;
-		this.bIsJoinGame	= true;
+		this.iSpawnCount 		= 0;
+		this.iStateRoom 		= ROOM_STATE_OUTDOOR;
+		this.bIsSoundBurn		= false;
+		this.bIsUsingDefib	= false;
+		this.bIsJoinGame		= true;
 	}
 }
 ClientManager g_CMClient[MAXPLAYERS+1];
@@ -123,8 +123,7 @@ enum struct EntityManager
 }
 EntityManager g_EMEntity;
 
-
-//== Special Spawn door offsets ==//
+//=== Rescue door rotation ======//
 char  g_sCheckpointMapName[][] =
 {
 	"c2m3_coaster",
