@@ -55,7 +55,8 @@ v 1.0.1
 #define MAT_HALO			"materials/sprites/halo01.vmt"
 #define MAT_BLOOD			"materials/sprites/bloodspray.vmt"
 
-////// Developer Touch Area Constructor //////
+
+////// Developer Touch Area Constructor ////////
 int		g_iMaterialLaser;
 int		g_iMaterialHalo;
 int		g_iMaterialBlood;
@@ -65,7 +66,7 @@ float	g_fVecPos[3];
 float	g_fVecAng[3];
 float	g_fVecMin[3] = { -100.0, -100.0, 0.0 };
 float	g_fVecMax[3] = { 100.0, 100.0, 100.0 };
-/////////////////////////////////////////////
+////////////////////////////////////////////////
 
 
 //======== Global ConVar ========//
@@ -101,7 +102,7 @@ bool	g_bCvar_IsDebugging;
 public Plugin myinfo = 
 {
 	name		= "Safe Room Hazard",
-	author		= " GsiX ",
+	author		= "GsiX",
 	description	= "Prevent player from camp in the safe room",
 	version		= PLUGIN_VERSION,
 	url			= "https://forums.alliedmods.net/showthread.php?p=1836806#post1836806"	
@@ -109,7 +110,7 @@ public Plugin myinfo =
 
 public void OnPluginStart()
 {
-	CreateConVar( "saferoomhazard_version", PLUGIN_VERSION, " ", FCVAR_DONTRECORD);
+	CreateConVar( "hazard_version", PLUGIN_VERSION, " ", FCVAR_DONTRECORD);
 	g_ConVarSafeHazard_PluginEnable			= CreateConVar( "hazard_plugin_enable",		"1",	"0:Off,  1:On,  Toggle plugin On/Off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_NotifySpawn1			= CreateConVar( "hazard_notify_leave1",		"20",	"Timer first notify to player to leave safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
 	g_ConVarSafeHazard_NotifySpawn2			= CreateConVar( "hazard_notify_leave2",		"10",	"Timer damage countdown after 'hazard_notify_leave1'", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
@@ -792,17 +793,17 @@ public void EVENT_Defibrillator( Event event, const char[] name, bool dontBroadc
 	{
 		if( ChrCmp( name, "defibrillator_begin" ))
 		{
-			g_CMClient[subject].bIsSkipSpawnCheck = true;
+			g_CMClient[subject].bIsUsingDefib = true;
 			Print_ServerText( "Defibrillator Begin", g_bCvar_IsDebugging );
 		}
 		else if( ChrCmp( name, "defibrillator_used_fail" ) || ChrCmp( name, "defibrillator_interrupted" ))
 		{
-			g_CMClient[subject].bIsSkipSpawnCheck = false;
+			g_CMClient[subject].bIsUsingDefib = false;
 			Print_ServerText( "Defibrillator Fail/Interrupted", g_bCvar_IsDebugging );
 		}
 		else if( ChrCmp( name, "defibrillator_used" ))
 		{
-			g_CMClient[subject].bIsSkipSpawnCheck = false;
+			g_CMClient[subject].bIsUsingDefib = false;
 			if( !IsFakeClient( subject ))
 			{
 				Print_RespawnMessage( subject );
@@ -866,7 +867,7 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 		{
 			case TEAM_SURVIVOR:
 			{
-				if( g_CMClient[client].bIsSkipSpawnCheck ) return;
+				if( g_CMClient[client].bIsUsingDefib ) return;
 				
 				if( !IsFakeClient( client ))
 				{
