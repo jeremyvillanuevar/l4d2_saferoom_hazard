@@ -498,7 +498,6 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 				StopBurningSound( i );
 				TeleportPlayer( i, pos, SND_TELEPORT );
 				g_CMClient[i].iStateRoom = g_CMClient[client].iStateRoom;
-				//CheatCommand_Jump( i, pos, g_CMClient[client].iStateRoom );
 			}
 		}
 	}
