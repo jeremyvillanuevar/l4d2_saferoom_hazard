@@ -50,6 +50,8 @@ v 1.0.1
 #define DIST_REFERENCE		80.0
 #define DIST_DUMMYHEIGHT	-53.0
 
+#define CFG_MAPCONFIG		"saferoom_config"
+
 #define SND_TELEPORT		"ui/menu_horror01.wav"
 #define SND_BURNING			"ambient/fire/fire_small_loop2.wav"
 #define SND_WARNING			"items/suitchargeok1.wav"
@@ -159,9 +161,10 @@ public void OnPluginStart()
 	
 
 	//================= Admin and developer command =================//
-	RegAdminCmd( "srh_enter",	Command_ForceEnter_CheckpointRoom,	ADMFLAG_GENERIC, "Admin jump command. Force everyone into checkpoint saferoom." );
-	RegAdminCmd( "srh_jump",	Command_ForceEnter_JumpSaferoom,	ADMFLAG_GENERIC, "Admin jump command. 0: spawn | 1: checkpoint | 2: current position." );
-	RegAdminCmd( "srh_box",		Command_DeveloperBoundingBox,		ADMFLAG_GENERIC, "Admin command. Prototype trigger touch bounding box. Range 0 ~ 6" );
+	RegAdminCmd( "srh_enter",		Command_ForceEnter_CheckpointRoom,		ADMFLAG_GENERIC, "Admin jump command. Force everyone into checkpoint saferoom." );
+	RegAdminCmd( "srh_jump",		Command_ForceEnter_JumpSaferoom,		ADMFLAG_GENERIC, "Admin jump command. 0: spawn | 1: checkpoint | 2: current position." );
+	RegAdminCmd( "srh_box",			Command_DeveloperBoundingBox_Create,	ADMFLAG_GENERIC, "Admin command. Prototype trigger touch bounding box. Range 0 ~ 6" );
+	RegAdminCmd( "srh_spawnsave",	Command_DeveloperBoundingBox_Save,		ADMFLAG_GENERIC, "Admin command. Save generated bounding box" );
 	
 	/*
 		bind home			"say !srh_box 1 10"
@@ -260,15 +263,30 @@ public void OnMapStart()
 		}
 	}
 	
-	g_EMEntity.iIndexSpawn = -1;
-	for( int i = 0; i < sizeof( g_sMapConfig ); i++ )
+	char keyBuff[VEC_LEN][32];
+	g_EMEntity.bIsCfgLoaded = ReadConfig( CFG_MAPCONFIG, g_EMEntity.sCurrentMap, keyBuff );
+	if( g_EMEntity.bIsCfgLoaded )
 	{
-		if( ChrCmp( g_EMEntity.sCurrentMap, g_sMapConfig[i] ))
-		{
-			g_EMEntity.iIndexSpawn = i;
-			Print_ServerText( "Spawn Array Index Found!!", g_bCvar_IsDebugging );
-			break;
-		}
+		char valBuff[3][32];
+		ExplodeString( keyBuff[VEC_POS], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
+		g_EMEntity.fBoxPos[0] = StringToFloat( valBuff[0] );
+		g_EMEntity.fBoxPos[1] = StringToFloat( valBuff[1] );
+		g_EMEntity.fBoxPos[2] = StringToFloat( valBuff[2] );
+		
+		ExplodeString( keyBuff[VEC_ANG], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
+		g_EMEntity.fBoxAng[0] = StringToFloat( valBuff[0] );
+		g_EMEntity.fBoxAng[1] = StringToFloat( valBuff[1] );
+		g_EMEntity.fBoxAng[2] = StringToFloat( valBuff[2] );
+		
+		ExplodeString( keyBuff[VEC_MIN], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
+		g_EMEntity.fBoxMin[0] = StringToFloat( valBuff[0] );
+		g_EMEntity.fBoxMin[1] = StringToFloat( valBuff[1] );
+		g_EMEntity.fBoxMin[2] = StringToFloat( valBuff[2] );
+		
+		ExplodeString( keyBuff[VEC_MAX], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
+		g_EMEntity.fBoxMax[0] = StringToFloat( valBuff[0] );
+		g_EMEntity.fBoxMax[1] = StringToFloat( valBuff[1] );
+		g_EMEntity.fBoxMax[2] = StringToFloat( valBuff[2] );
 	}
 	
 	char mapname[128];
@@ -519,7 +537,7 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 	return Plugin_Handled;
 }
 
-public Action Command_DeveloperBoundingBox( int client, int args )
+public Action Command_DeveloperBoundingBox_Create( int client, int args )
 {
 	if ( client < 1 )
 	{
@@ -654,7 +672,6 @@ public Action Command_DeveloperBoundingBox( int client, int args )
 				TeleportEntity( g_iEntityReff, NULL_VECTOR, g_fVecAng, NULL_VECTOR );
 			}
 		}
-		Print_BoundingBoxResult( client, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
 	}
 	return Plugin_Handled;
 }
@@ -670,6 +687,29 @@ void Print_BoundingBoxResult( int client, const char[] mapname, float pos[3], fl
 	PrintToChat( client, "	{ %.2f, %.2f, %.2f }",  max[0], max[1], max[2] );
 	PrintToChat( client, "}," );
 	PrintToChat( client, " " );
+}
+
+public Action Command_DeveloperBoundingBox_Save( int client, int args )
+{
+	if ( client < 1 )
+	{
+		ReplyToCommand( client, "[SAFEROOM]: Command only valid in game!!" );
+		return Plugin_Handled;
+	}
+	
+	if ( !g_bCvar_IsDebugging )
+	{
+		ReplyToCommand( client, "[SAFEROOM]: Debugging mode disabled!!" );
+		return Plugin_Handled;
+	}
+	
+	if( g_iEntityTest == -1 || !IsValidEntity( g_iEntityTest ))
+	{
+		ReplyToCommand( client, "[SAFEROOM]: No Bounding Box to save!!" );
+		return Plugin_Handled;
+	}
+	SaveConfig( client, CFG_MAPCONFIG, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
+	return Plugin_Handled;
 }
 
 public void EVENT_RoundEnd( Event event, const char[] name, bool dontBroadcast )
@@ -1371,24 +1411,14 @@ void Create_MapTouchTrigger( int client )
 	/////////////////////////////////////////////////
 	//========= create spawn touch trigger ========//
 	/////////////////////////////////////////////////
-	if( g_EMEntity.iIndexSpawn == -1 )
+	if( !g_EMEntity.bIsCfgLoaded )
 	{
 		// current map name not in trigger touch list
 		Print_ServerText( "Current map not in the trigger config list!!", g_bCvar_IsDebugging );
 		return;
 	}
-	
-	float pos[3];
-	float ang[3];
-	float min[3];
-	float max[3];
-	
-	pos = view_as<float>( g_fMapsVec[ g_EMEntity.iIndexSpawn ][VEC_POS] );
-	ang = view_as<float>( g_fMapsVec[ g_EMEntity.iIndexSpawn ][VEC_ANG] );
-	min = view_as<float>( g_fMapsVec[ g_EMEntity.iIndexSpawn ][VEC_MIN] );
-	max = view_as<float>( g_fMapsVec[ g_EMEntity.iIndexSpawn ][VEC_MAX] );
-	
-	int sensor = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR1], pos, min , max );
+
+	int sensor = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR1], g_EMEntity.fBoxPos, g_EMEntity.fBoxMin , g_EMEntity.fBoxMax );
 	if( sensor != -1 )
 	{
 		g_EMEntity.iEntTrigger = sensor;
@@ -1397,10 +1427,10 @@ void Create_MapTouchTrigger( int client )
 		if( g_EMEntity.iDoor_Spawn == -1 )
 		{
 			// create toy referance based on trigger touch position
-			g_EMEntity.fPos_Spawn = view_as<float>( pos );
+			g_EMEntity.fPos_Spawn = view_as<float>( g_EMEntity.fBoxPos );
 			
 			int rand = GetRandomInt( 0, 2 );
-			g_EMEntity.iRefs_Spawn = Create_Reference( g_sDummyModel[rand], pos, ang, g_iCvar_ToyAlpha, g_bCvar_IsDebugging );
+			g_EMEntity.iRefs_Spawn = Create_Reference( g_sDummyModel[rand], g_EMEntity.fBoxPos, g_EMEntity.fBoxAng, g_iCvar_ToyAlpha, g_bCvar_IsDebugging );
 		}
 		
 		if( g_bCvar_IsDebugging )
@@ -1468,19 +1498,19 @@ void Create_PointHurt( int victim, int attacker, int damage, int dmg_type, const
 	// event "player_hurt" trigged by this point hurt
 	if( victim > 0 && damage > 0 )
 	{
-		char dmg_str[16];
-		IntToString( damage, dmg_str, 16 );
-		char dmg_type_str[32];
-		IntToString( dmg_type, dmg_type_str, 32 );
 		int pointHurt = CreateEntityByName( "point_hurt" );
 		if ( pointHurt == -1 ) return;
 		
-		char hurtName[32];
-		Format( hurtName, sizeof( hurtName ), "pointhurt_%d", pointHurt );
-		DispatchKeyValue( victim, "targetname", hurtName );
-		DispatchKeyValue( pointHurt, "DamageTarget", hurtName );
-		DispatchKeyValue( pointHurt, "Damage", dmg_str );
-		DispatchKeyValue( pointHurt, "DamageType", dmg_type_str );
+		char buff[32];
+		Format( buff, sizeof( buff ), "pointhurt_%d", pointHurt );
+		DispatchKeyValue( victim, "targetname", buff );
+		DispatchKeyValue( pointHurt, "DamageTarget", buff );
+		
+		IntToString( damage, buff, sizeof( buff ));
+		DispatchKeyValue( pointHurt, "Damage", buff );
+		
+		IntToString( dmg_type, buff, sizeof( buff ));
+		DispatchKeyValue( pointHurt, "DamageType", buff );
 		if ( !StrEqual( weapon, "" ))
 		{
 			DispatchKeyValue( pointHurt, "classname", weapon );
@@ -1679,8 +1709,109 @@ void Print_ServerText( const char[] text, bool print )
 	PrintToServer( " " );
 }
 
+bool SaveConfig( int client, const char[] filename, const char[] key, float pos[3], float ang[3], float min[3], float max[3] )
+{
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	
+	char buff[64];
+	KeyValues kv = new KeyValues( filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		Print_ServerText( "File import failed", true );
+		delete kv;
+		return false;
+	}
+	if( !kv.JumpToKey( key ))
+	{
+		Print_ServerText( "Unable to read config.", true );
+		delete kv;
+		return false;
+	}
+	
+	Format( buff, sizeof( buff ), "%.2f, %.2f, %.2f", pos[0], pos[1], pos[2] );
+	kv.SetString( "pos", buff );
+	
+	Format( buff, sizeof( buff ), "%.2f, %.2f, %.2f", ang[0], ang[1], ang[2] );
+	kv.SetString( "ang", buff );
+	
+	Format( buff, sizeof( buff ), "%.2f, %.2f, %.2f", min[0], min[1], min[2] );
+	kv.SetString( "min", buff );
+	
+	Format( buff, sizeof( buff ), "%.2f, %.2f, %.2f", max[0], max[1], max[2] );
+	kv.SetString( "max", buff );
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	
+	Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", key );
+	if( client > 0 )
+	{
+		Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", key );
+		PrintToChat( client, buff );
+	}
+	
+	Format( buff, sizeof( buff ), "Map Config Saved: %s", key );
+	Print_ServerText( buff, true );
+	return true;
+}
 
+stock bool DeleteConfig( int client, const char[] filename, const char[] key )
+{
+	KeyValues kv = new KeyValues( filename );
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		Print_ServerText( "File import failed", true );
+		delete kv;
+		return false;
+	}
 
+	if( !kv.JumpToKey( key ))
+	{
+		PrintToChat( client, "[SAFEROOM]: Unable to delete. Cfg name don't exist." );
+		delete kv;
+		return false;
+	}
+
+	kv.DeleteThis();
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	PrintToChat( client, "\x01[SAFEROOM]: Map \x05%s \x01deleted.", key );
+	return true;
+}
+
+bool ReadConfig( const char[] filename, const char[] key, const char[][] buffer )
+{
+	KeyValues kv = new KeyValues( filename );
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		Print_ServerText( "File import failed", true );
+		delete kv;
+		return false;
+	}
+
+	if( !kv.JumpToKey( key ))
+	{
+		Print_ServerText( "Unable to read map config.", true );
+		delete kv;
+		return false;
+	}
+	
+	kv.GetString( "pos", buffer[0], 32 );
+	kv.GetString( "ang", buffer[1], 32 );
+	kv.GetString( "min", buffer[2], 32 );
+	kv.GetString( "max", buffer[3], 32 );
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	Print_ServerText( "Config loaded succsesfully.", true );
+	return true;
+}
 
 
 
@@ -1829,9 +1960,4 @@ stock void TE_SendBeam( const float vecMins[3], const float vecMaxs[3] )
 	TE_SetupBeamPoints( vecMins, vecMaxs, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 0.3 + 0.1, 1.0, 1.0, 1, 0.0, view_as<int>({ 0, 255, 0, 255 }), 0 );
 	TE_SendToAll();
 }
-
-
-
-
-
 
