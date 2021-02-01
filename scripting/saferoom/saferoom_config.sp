@@ -44,7 +44,7 @@ enum struct ClientManager
 	int  iSpawnCount;
 	int	 iStateRoom;
 	bool bIsSoundBurn;
-	bool bIsUseDefib;
+	bool bIsSkipSpawnCheck;
 	bool bIsJoinGame;
 	
 	void Reset()
@@ -52,7 +52,7 @@ enum struct ClientManager
 		this.iSpawnCount 	= 0;
 		this.iStateRoom 	= ROOM_STATE_OUTDOOR;
 		this.bIsSoundBurn	= false;
-		this.bIsUseDefib	= false;
+		this.bIsSkipSpawnCheck	= false;
 		this.bIsJoinGame	= true;
 	}
 }
