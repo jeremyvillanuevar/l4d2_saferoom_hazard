@@ -50,7 +50,7 @@ v 1.0.1
 #define DIST_REFERENCE		80.0
 #define DIST_DUMMYHEIGHT	-53.0
 
-#define FILE_SPAWN			"saferoom_config"
+#define FILE_SPAWN			"saferoom_boxspawn"
 #define FILE_CPDOOR			"saferoom_cpdoor"
 
 #define SND_TELEPORT		"ui/menu_horror01.wav"
@@ -262,6 +262,7 @@ public void OnMapStart()
 		g_EMEntity.fCPRotate = StringToFloat( cpBuff );
 	}
 	
+	
 	// get spawn area bounding box config
 	char keyBuff[VEC_LEN][32];
 	g_EMEntity.bIsCfgLoaded = ReadConfig_Spawn( FILE_SPAWN, g_EMEntity.sCurrentMap, keyBuff );
@@ -269,24 +270,16 @@ public void OnMapStart()
 	{
 		char valBuff[3][32];
 		ExplodeString( keyBuff[VEC_POS], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
-		g_EMEntity.fBoxPos[0] = StringToFloat( valBuff[0] );
-		g_EMEntity.fBoxPos[1] = StringToFloat( valBuff[1] );
-		g_EMEntity.fBoxPos[2] = StringToFloat( valBuff[2] );
+		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fBoxPos );
 		
 		ExplodeString( keyBuff[VEC_ANG], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
-		g_EMEntity.fBoxAng[0] = StringToFloat( valBuff[0] );
-		g_EMEntity.fBoxAng[1] = StringToFloat( valBuff[1] );
-		g_EMEntity.fBoxAng[2] = StringToFloat( valBuff[2] );
+		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fBoxAng );
 		
 		ExplodeString( keyBuff[VEC_MIN], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
-		g_EMEntity.fBoxMin[0] = StringToFloat( valBuff[0] );
-		g_EMEntity.fBoxMin[1] = StringToFloat( valBuff[1] );
-		g_EMEntity.fBoxMin[2] = StringToFloat( valBuff[2] );
+		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fBoxMin );
 		
 		ExplodeString( keyBuff[VEC_MAX], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
-		g_EMEntity.fBoxMax[0] = StringToFloat( valBuff[0] );
-		g_EMEntity.fBoxMax[1] = StringToFloat( valBuff[1] );
-		g_EMEntity.fBoxMax[2] = StringToFloat( valBuff[2] );
+		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fBoxMax );
 	}
 	
 	char mapname[128];
@@ -1709,6 +1702,14 @@ void Print_ServerText( const char[] text, bool print )
 	PrintToServer( " " );
 }
 
+void ConvertStringToFloat( const char[][] source, int source_size, float[] buff )
+{
+	for( int i = 0; i < source_size; i++ )
+	{
+		buff[i] = StringToFloat( source[i] );
+	}
+}
+
 bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, float pos[3], float ang[3], float min[3], float max[3] )
 {
 	char filepath[PLATFORM_MAX_PATH];
@@ -1749,33 +1750,6 @@ bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, 
 		Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", mapname );
 		PrintToChat( client, buff );
 	}
-	return true;
-}
-
-stock bool DeleteConfig( int client, const char[] filename, const char[] mapname )
-{
-	KeyValues kv = new KeyValues( filename );
-	char filepath[PLATFORM_MAX_PATH];
-	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
-	if( !kv.ImportFromFile( filepath ))
-	{
-		PrintToChat( client, "[SAFEROOM]: Delete failed. Unable to find file." );
-		delete kv;
-		return false;
-	}
-
-	if( !kv.JumpToKey( mapname ))
-	{
-		PrintToChat( client, "[SAFEROOM]: Unable to delete. Map name don't exist." );
-		delete kv;
-		return false;
-	}
-
-	kv.DeleteThis();
-	kv.Rewind();
-	kv.ExportToFile( filepath );
-	delete kv;
-	PrintToChat( client, "\x01[SAFEROOM]: Map \x05%s \x01deleted.", mapname );
 	return true;
 }
 
@@ -1835,6 +1809,32 @@ bool ReadConfig_Cpdoor( const char[] filename, const char[] mapname, char[] buff
 	return true;
 }
 
+stock bool DeleteConfig( int client, const char[] filename, const char[] mapname )
+{
+	KeyValues kv = new KeyValues( filename );
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		PrintToChat( client, "[SAFEROOM]: Delete failed. Unable to find file." );
+		delete kv;
+		return false;
+	}
+
+	if( !kv.JumpToKey( mapname ))
+	{
+		PrintToChat( client, "[SAFEROOM]: Unable to delete. Map name don't exist." );
+		delete kv;
+		return false;
+	}
+
+	kv.DeleteThis();
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	PrintToChat( client, "\x01[SAFEROOM]: Map \x05%s \x01deleted.", mapname );
+	return true;
+}
 
 
 
