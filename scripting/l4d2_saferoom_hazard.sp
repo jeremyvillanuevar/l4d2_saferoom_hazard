@@ -50,7 +50,8 @@ v 1.0.1
 #define DIST_REFERENCE		80.0
 #define DIST_DUMMYHEIGHT	-53.0
 
-#define CFG_MAPCONFIG		"saferoom_config"
+#define FILE_SPAWN			"saferoom_config"
+#define FILE_CPDOOR			"saferoom_cpdoor"
 
 #define SND_TELEPORT		"ui/menu_horror01.wav"
 #define SND_BURNING			"ambient/fire/fire_small_loop2.wav"
@@ -252,19 +253,18 @@ public void OnMapStart()
 	
 	GetCurrentMap( g_EMEntity.sCurrentMap, sizeof( g_EMEntity.sCurrentMap ));
 	
-	g_EMEntity.iIndexRotate = -1;
-	for( int i = 0; i < sizeof( g_sCheckpointMapName ); i++ )
+	
+	// get checkpoint door angle special rotation offsets
+	char cpBuff[8];
+	g_EMEntity.fCPRotate = -1.0;
+	if( ReadConfig_Cpdoor( FILE_CPDOOR, g_EMEntity.sCurrentMap, cpBuff ))
 	{
-		if( ChrCmp( g_EMEntity.sCurrentMap, g_sCheckpointMapName[i] ))
-		{
-			g_EMEntity.iIndexRotate = i;
-			Print_ServerText( "Checkpoint Array Index Found!!", g_bCvar_IsDebugging );
-			break;
-		}
+		g_EMEntity.fCPRotate = StringToFloat( cpBuff );
 	}
 	
+	// get spawn area bounding box config
 	char keyBuff[VEC_LEN][32];
-	g_EMEntity.bIsCfgLoaded = ReadConfig( CFG_MAPCONFIG, g_EMEntity.sCurrentMap, keyBuff );
+	g_EMEntity.bIsCfgLoaded = ReadConfig_Spawn( FILE_SPAWN, g_EMEntity.sCurrentMap, keyBuff );
 	if( g_EMEntity.bIsCfgLoaded )
 	{
 		char valBuff[3][32];
@@ -708,7 +708,7 @@ public Action Command_DeveloperBoundingBox_Save( int client, int args )
 		ReplyToCommand( client, "[SAFEROOM]: No Bounding Box to save!!" );
 		return Plugin_Handled;
 	}
-	SaveConfig( client, CFG_MAPCONFIG, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
+	SaveConfig_Spawn( client, FILE_SPAWN, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
 	return Plugin_Handled;
 }
 
@@ -1390,9 +1390,9 @@ void Create_MapTouchTrigger( int client )
 		Get_EntityLocation( g_EMEntity.iDoor_Rescue, g_EMEntity.fPos_Rescue, ang );
 		g_EMEntity.fPos_Rescue[2] += DIST_DUMMYHEIGHT;
 		
-		if( g_EMEntity.iIndexRotate != -1 )
+		if( g_EMEntity.fCPRotate != -1.0 )
 		{
-			ang[1] += g_fCheckpointDoorAngle[ g_EMEntity.iIndexRotate ];
+			ang[1] += g_EMEntity.fCPRotate;
 		}
 		else
 		{
@@ -1709,7 +1709,7 @@ void Print_ServerText( const char[] text, bool print )
 	PrintToServer( " " );
 }
 
-bool SaveConfig( int client, const char[] filename, const char[] key, float pos[3], float ang[3], float min[3], float max[3] )
+bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, float pos[3], float ang[3], float min[3], float max[3] )
 {
 	char filepath[PLATFORM_MAX_PATH];
 	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
@@ -1718,13 +1718,13 @@ bool SaveConfig( int client, const char[] filename, const char[] key, float pos[
 	KeyValues kv = new KeyValues( filename );
 	if( !kv.ImportFromFile( filepath ))
 	{
-		Print_ServerText( "File import failed", true );
+		Print_ServerText( "Spawn file import failed", true );
 		delete kv;
 		return false;
 	}
-	if( !kv.JumpToKey( key ))
+	if( !kv.JumpToKey( mapname, true ))
 	{
-		Print_ServerText( "Unable to read config.", true );
+		Print_ServerText( "Spawn read config failed.", true );
 		delete kv;
 		return false;
 	}
@@ -1744,33 +1744,29 @@ bool SaveConfig( int client, const char[] filename, const char[] key, float pos[
 	kv.ExportToFile( filepath );
 	delete kv;
 	
-	Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", key );
 	if( client > 0 )
 	{
-		Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", key );
+		Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", mapname );
 		PrintToChat( client, buff );
 	}
-	
-	Format( buff, sizeof( buff ), "Map Config Saved: %s", key );
-	Print_ServerText( buff, true );
 	return true;
 }
 
-stock bool DeleteConfig( int client, const char[] filename, const char[] key )
+stock bool DeleteConfig( int client, const char[] filename, const char[] mapname )
 {
 	KeyValues kv = new KeyValues( filename );
 	char filepath[PLATFORM_MAX_PATH];
 	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
 	if( !kv.ImportFromFile( filepath ))
 	{
-		Print_ServerText( "File import failed", true );
+		PrintToChat( client, "[SAFEROOM]: Delete failed. Unable to find file." );
 		delete kv;
 		return false;
 	}
 
-	if( !kv.JumpToKey( key ))
+	if( !kv.JumpToKey( mapname ))
 	{
-		PrintToChat( client, "[SAFEROOM]: Unable to delete. Cfg name don't exist." );
+		PrintToChat( client, "[SAFEROOM]: Unable to delete. Map name don't exist." );
 		delete kv;
 		return false;
 	}
@@ -1779,25 +1775,25 @@ stock bool DeleteConfig( int client, const char[] filename, const char[] key )
 	kv.Rewind();
 	kv.ExportToFile( filepath );
 	delete kv;
-	PrintToChat( client, "\x01[SAFEROOM]: Map \x05%s \x01deleted.", key );
+	PrintToChat( client, "\x01[SAFEROOM]: Map \x05%s \x01deleted.", mapname );
 	return true;
 }
 
-bool ReadConfig( const char[] filename, const char[] key, const char[][] buffer )
+bool ReadConfig_Spawn( const char[] filename, const char[] mapname, char[][] buffer )
 {
 	KeyValues kv = new KeyValues( filename );
 	char filepath[PLATFORM_MAX_PATH];
 	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
 	if( !kv.ImportFromFile( filepath ))
 	{
-		Print_ServerText( "File import failed", true );
+		Print_ServerText( "Spawn file import failed", true );
 		delete kv;
 		return false;
 	}
 
-	if( !kv.JumpToKey( key ))
+	if( !kv.JumpToKey( mapname ))
 	{
-		Print_ServerText( "Unable to read map config.", true );
+		Print_ServerText( "Spawn read config failed.", true );
 		delete kv;
 		return false;
 	}
@@ -1809,9 +1805,40 @@ bool ReadConfig( const char[] filename, const char[] key, const char[][] buffer 
 	kv.Rewind();
 	kv.ExportToFile( filepath );
 	delete kv;
-	Print_ServerText( "Config loaded succsesfully.", true );
+	Print_ServerText( "Spawn box loaded succsesfully.", g_bCvar_IsDebugging );
 	return true;
 }
+
+bool ReadConfig_Cpdoor( const char[] filename, const char[] mapname, char[] buffer )
+{
+	KeyValues kv = new KeyValues( filename );
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		Print_ServerText( "File import failed | Spawn", true );
+		delete kv;
+		return false;
+	}
+
+	if( !kv.JumpToKey( mapname ))
+	{
+		delete kv;
+		return false;
+	}
+	
+	kv.GetString( "rotate", buffer, 8 ); //error 035: argument type mismatch (argument 3)
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	Print_ServerText( "CPDoor loaded succsesfully.", g_bCvar_IsDebugging );
+	return true;
+}
+
+
+
+
+
 
 
 
@@ -1878,6 +1905,7 @@ stock int FindRandomHumanPlayers()
 		}
 	}
 	
+	// no human players
 	if( count == -1 )
 	{
 		return count;
