@@ -1,4 +1,48 @@
 
+#define DMG_VALUE			999999
+
+#define TEAM_SURVIVOR		2
+#define TEAM_INFECTED		3
+
+#define DIST_RADIUS			1000.0
+#define DIST_SENSOR			20.0
+#define DIST_REFERENCE		80.0
+#define DIST_DUMMYHEIGHT	-53.0
+
+#define FILE_SPAWN			"saferoom_boxspawn"
+#define FILE_CPDOOR			"saferoom_cpdoor"
+
+#define SND_TELEPORT		"ui/menu_horror01.wav"
+#define SND_BURNING			"ambient/fire/fire_small_loop2.wav"
+#define SND_WARNING			"items/suitchargeok1.wav"
+
+#define MDL_SPAWNROOM1		"models/props_doors/checkpoint_door_01.mdl"
+#define MDL_SPAWNROOM2		"models/props_doors/checkpoint_door_-01.mdl"
+#define MDL_CHECKROOM1		"models/props_doors/checkpoint_door_02.mdl"
+#define MDL_CHECKROOM2		"models/props_doors/checkpoint_door_-02.mdl"
+
+#define PAT_FIRE			"burning_character_screen"			// @Silver [L4D2] Hud Splatter
+
+#define MAT_BEAM			"materials/sprites/laserbeam.vmt"	// @silver [ANY] Trigger Multiple Commands
+#define MAT_HALO			"materials/sprites/halo01.vmt"
+#define MAT_BLOOD			"materials/sprites/bloodspray.vmt"
+
+
+////////////////////////////////////////////////
+////// Developer Touch Area Constructor ////////
+int		g_iMaterialLaser;
+int		g_iMaterialHalo;
+int		g_iMaterialBlood;
+int		g_iEntityTest;
+int		g_iEntityReff;
+float	g_fVecPos[3];
+float	g_fVecAng[3];
+float	g_fVecMin[3] = { -100.0, -100.0, 0.0 };
+float	g_fVecMax[3] = { 100.0, 100.0, 100.0 };
+////////////////////////////////////////////////
+////////////////////////////////////////////////
+
+
 enum //=== Constructor Move Type =======//
 {
 	MOVE_DELETE,
