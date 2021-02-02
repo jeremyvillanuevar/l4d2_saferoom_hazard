@@ -3,7 +3,7 @@
 =================== TODO ==================
 - radio use waiting teleport, damage.
 - rescue vehicle ready teleport, damage.
-- saferoom burning effect by LUX@ChocolateCat
+- saferoom burning effect/particle by LUX@ChocolateCat
 
 
 ============= version history =============
@@ -12,7 +12,7 @@ v 1.1.0
 	@GL_INS beta tester
 	@Mart
 	@Impact
-	#Silver
+	@Silver
 - plugins conversion to new syntax.
 - changed command for force enter.
 - change detection from radius to sdkhook sensor.
@@ -39,48 +39,6 @@ v 1.0.1
 #include <sdktools>
 #include <sdkhooks>
 #include <saferoom_config.sp>
-
-#define DMG_VALUE			999999
-
-#define TEAM_SURVIVOR		2
-#define TEAM_INFECTED		3
-
-#define DIST_RADIUS			1000.0
-#define DIST_SENSOR			20.0
-#define DIST_REFERENCE		80.0
-#define DIST_DUMMYHEIGHT	-53.0
-
-#define FILE_SPAWN			"saferoom_boxspawn"
-#define FILE_CPDOOR			"saferoom_cpdoor"
-
-#define SND_TELEPORT		"ui/menu_horror01.wav"
-#define SND_BURNING			"ambient/fire/fire_small_loop2.wav"
-#define SND_WARNING			"items/suitchargeok1.wav"
-
-#define MDL_SPAWNROOM1		"models/props_doors/checkpoint_door_01.mdl"
-#define MDL_SPAWNROOM2		"models/props_doors/checkpoint_door_-01.mdl"
-#define MDL_CHECKROOM1		"models/props_doors/checkpoint_door_02.mdl"
-#define MDL_CHECKROOM2		"models/props_doors/checkpoint_door_-02.mdl"
-
-#define PAT_FIRE			"burning_character_screen"			// @Silver [L4D2] Hud Splatter
-
-#define MAT_BEAM			"materials/sprites/laserbeam.vmt"	// @silver [ANY] Trigger Multiple Commands
-#define MAT_HALO			"materials/sprites/halo01.vmt"
-#define MAT_BLOOD			"materials/sprites/bloodspray.vmt"
-
-
-////// Developer Touch Area Constructor ////////
-int		g_iMaterialLaser;
-int		g_iMaterialHalo;
-int		g_iMaterialBlood;
-int		g_iEntityTest;
-int		g_iEntityReff;
-float	g_fVecPos[3];
-float	g_fVecAng[3];
-float	g_fVecMin[3] = { -100.0, -100.0, 0.0 };
-float	g_fVecMax[3] = { 100.0, 100.0, 100.0 };
-////////////////////////////////////////////////
-
 
 //======== Global ConVar ========//
 ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
@@ -1919,18 +1877,21 @@ stock int FindRandomHumanPlayers()
 public Action Timer_DeveloperShowBeam1( Handle timer, any entref )	
 {
 	int entity = EntRefToEntIndex( entref );
-	if( g_EMEntity.hTimer[TIMER_LASER1] == timer && IsValidEntity( entity ))
+	if( IsValidEntity( entity ))
 	{
-		float vecMaxs[3], vecMins[3], vecPos[3];
-		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vecPos );
-		GetEntPropVector( entity, Prop_Send, "m_vecMins", vecMins );
-		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vecMaxs );
-		AddVectors( vecPos, vecMins, vecMins );
-		AddVectors( vecPos, vecMaxs, vecMaxs );
-		TE_SendBox( vecMins, vecMaxs );
-		return Plugin_Continue;
+		if( g_EMEntity.hTimer[TIMER_LASER1] == timer ) // development sanity check, functionality dosent matter, handle leak matters.
+		{
+			float vecMaxs[3], vecMins[3], vecPos[3];
+			GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vecPos );
+			GetEntPropVector( entity, Prop_Send, "m_vecMins", vecMins );
+			GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vecMaxs );
+			AddVectors( vecPos, vecMins, vecMins );
+			AddVectors( vecPos, vecMaxs, vecMaxs );
+			TE_SendBox( vecMins, vecMaxs );
+			return Plugin_Continue;
+		}
+		AcceptEntityInput( entity, "kill" );
 	}
-	// development sanity check, functionality dosent matter, handle leak matters.
 	g_EMEntity.hTimer[TIMER_LASER1] = null;
 	return Plugin_Stop;
 }
@@ -1938,18 +1899,21 @@ public Action Timer_DeveloperShowBeam1( Handle timer, any entref )
 public Action Timer_DeveloperShowBeam2( Handle timer, any entref )
 {
 	int entity = EntRefToEntIndex( entref );
-	if( g_EMEntity.hTimer[TIMER_LASER2] == timer && IsValidEntity( entity ))
+	if( IsValidEntity( entity ))
 	{
-		float vecMaxs[3], vecMins[3], vecPos[3];
-		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vecPos );
-		GetEntPropVector( entity, Prop_Send, "m_vecMins", vecMins );
-		GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vecMaxs );
-		AddVectors( vecPos, vecMins, vecMins );
-		AddVectors( vecPos, vecMaxs, vecMaxs );
-		TE_SendBox( vecMins, vecMaxs );
-		return Plugin_Continue;
+		if( g_EMEntity.hTimer[TIMER_LASER2] == timer ) // development sanity check, functionality dosent matter, handle leak matters.
+		{
+			float vecMaxs[3], vecMins[3], vecPos[3];
+			GetEntPropVector( entity, Prop_Send, "m_vecOrigin", vecPos );
+			GetEntPropVector( entity, Prop_Send, "m_vecMins", vecMins );
+			GetEntPropVector( entity, Prop_Send, "m_vecMaxs", vecMaxs );
+			AddVectors( vecPos, vecMins, vecMins );
+			AddVectors( vecPos, vecMaxs, vecMaxs );
+			TE_SendBox( vecMins, vecMaxs );
+			return Plugin_Continue;
+		}
+		AcceptEntityInput( entity, "kill" );
 	}
-	// development sanity check, functionality dosent matter, handle leak matters.
 	g_EMEntity.hTimer[TIMER_LASER2] = null;
 	return Plugin_Stop;
 }
