@@ -44,7 +44,7 @@ v 1.0.1
 ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
 		g_ConVarSafeHazard_DamageIncap,		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,		g_ConVarSafeHazard_EventNumber,	g_ConVarSafeHazard_CmdDoor,
 		g_ConVarSafeHazard_ReferanceToy,	g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_ExitMsg, 		g_ConVarSafeHazard_IsDamageBot,	g_ConVarSafeHazard_BloodColor,
-		g_ConVarSafeHazard_IsDebugging,		g_ConVarSafeHazard_DisableEnemy;
+		g_ConVarSafeHazard_IsDebugging,		g_ConVarSafeHazard_EnableEnemy;
 
 
 //========== Global Cvar ========//
@@ -98,7 +98,7 @@ public void OnPluginStart()
 	g_ConVarSafeHazard_IsDamageBot			= CreateConVar( "hazard_damage_bot",		"0",	"0:Off, 1:On, Apply damage to survivor bot.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_BloodColor			= CreateConVar( "hazard_blood_color",		"0,255,0",	"Damage blood color RGB separated by commas", FCVAR_SPONLY|FCVAR_NOTIFY );
 	g_ConVarSafeHazard_IsDebugging			= CreateConVar( "hazard_debugging_enable",	"0",	"0:Off, 1:On, Toggle debugging on/off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_DisableEnemy			= CreateConVar( "hazard_debugging_enemy",	"1",	"0:No enemy, 1:With enemy, Toggle enable enemy in debugging mode..", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_EnableEnemy			= CreateConVar( "hazard_debugging_enemy",	"1",	"0:No enemy, 1:With enemy, Toggle enable enemy in debugging mode..", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	AutoExecConfig( true, "l4d2_saferoom_hazard" );
 
 	
@@ -121,9 +121,9 @@ public void OnPluginStart()
 
 	//================= Admin and developer command =================//
 	RegAdminCmd( "srh_enter",		Command_ForceEnter_CheckpointRoom,		ADMFLAG_GENERIC, "Admin jump command. Force everyone into checkpoint saferoom." );
-	RegAdminCmd( "srh_jump",		Command_ForceEnter_JumpSaferoom,		ADMFLAG_GENERIC, "Admin jump command. 0: spawn | 1: checkpoint | 2: current position." );
+	RegAdminCmd( "srh_jump",		Command_ForceEnter_JumpSaferoom,		ADMFLAG_GENERIC, "Admin jump command. Args | 0:spawn | 1:checkpoint | 2:current position." );
 	RegAdminCmd( "srh_box",			Command_DeveloperBoundingBox_Create,	ADMFLAG_GENERIC, "Admin command. Prototype trigger touch bounding box. Range 0 ~ 6" );
-	RegAdminCmd( "srh_spawnsave",	Command_DeveloperBoundingBox_Save,		ADMFLAG_GENERIC, "Admin command. Save generated bounding box" );
+	RegAdminCmd( "srh_save",		Command_DeveloperBoundingBox_Save,		ADMFLAG_GENERIC, "Admin command. Save generated bounding box. Args | 0:spawn |" );
 	
 	/*
 		bind home			"say !srh_box 1 10"
@@ -131,20 +131,6 @@ public void OnPluginStart()
 		
 		bind pgup			"say !srh_box 2 10"
 		bind pgdn 			"say !srh_box 2 -10"
-		
-		bind kp_home		"say !srh_box 3 10"
-		bind kp_leftarrow	"say !srh_box 3 -10"
-		
-		bind kp_uparrow		"say !srh_box 4 10"
-		bind kp_5			"say !srh_box 4 -10"
-		
-		bind kp_pgup		"say !srh_box 5 10"
-		bind kp_rightarrow	"say !srh_box 5 -10"
-		
-		bind kp_end			"say !srh_box 6 15" 	//<< cant rotate trigger
-		bind kp_pgdn		"say !srh_box 6 -15" 	//<< cant rotate trigger
-		
-		
 		
 		bind kp_home		"say !srh_box 3 10"
 		bind kp_leftarrow	"say !srh_box 3 -10"
@@ -182,7 +168,7 @@ public void OnPluginStart()
 	g_ConVarSafeHazard_IsDamageBot.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_BloodColor.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_IsDebugging.AddChangeHook( ConVar_Changed );
-	g_ConVarSafeHazard_DisableEnemy.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_EnableEnemy.AddChangeHook( ConVar_Changed );
 	
 	UpdateCvar();
 }
@@ -297,7 +283,7 @@ void UpdateCvar()
 	g_fCvar_CheckpoinCountdown	= g_ConVarSafeHazard_CheckpoinCountdown.FloatValue;
 	g_bCvar_NotifyExit			= g_ConVarSafeHazard_ExitMsg.BoolValue;
 	g_bCvar_DamageBot			= g_ConVarSafeHazard_IsDamageBot.BoolValue;
-	g_bCvar_EnableEnemy			= g_ConVarSafeHazard_DisableEnemy.BoolValue;
+	g_bCvar_EnableEnemy			= g_ConVarSafeHazard_EnableEnemy.BoolValue;
 	
 	g_iCvar_Notify_Total = g_iCvar_NotifySpawn1 + g_iCvar_NotifySpawn2;
 	
@@ -329,7 +315,6 @@ void UpdateCvar()
 		{
 			if( g_EMEntity.iEntTrigger != -1 )
 			{
-				//ToggleGlowEnable( g_EMEntity.iEntTrigger, view_as<int>({ 000, 255, 000 }), true );
 				delete g_EMEntity.hTimer[TIMER_LASER1];
 				g_EMEntity.hTimer[TIMER_LASER1] = CreateTimer( 0.3, Timer_DeveloperShowBeam1, EntIndexToEntRef( g_EMEntity.iEntTrigger ), TIMER_REPEAT );
 			}
@@ -498,7 +483,7 @@ public Action Command_DeveloperBoundingBox_Create( int client, int args )
 	
 	if ( !g_bCvar_IsDebugging )
 	{
-		ReplyToCommand( client, "[SAFEROOM]: Debugging mode disabled!!" );
+		ReplyToCommand( client, "[SAFEROOM]: Debugging mode has been disabled!!" );
 		return Plugin_Handled;
 	}
 	
@@ -650,7 +635,7 @@ public Action Command_DeveloperBoundingBox_Save( int client, int args )
 	
 	if ( !g_bCvar_IsDebugging )
 	{
-		ReplyToCommand( client, "[SAFEROOM]: Debugging mode disabled!!" );
+		ReplyToCommand( client, "[SAFEROOM]: Debugging mode has been disabled!!" );
 		return Plugin_Handled;
 	}
 	
@@ -659,7 +644,16 @@ public Action Command_DeveloperBoundingBox_Save( int client, int args )
 		ReplyToCommand( client, "[SAFEROOM]: No Bounding Box to save!!" );
 		return Plugin_Handled;
 	}
-	SaveConfig_Spawn( client, FILE_SPAWN, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
+	
+	char arg1[8];
+	GetCmdArg( 1, arg1, sizeof( arg1 ));
+	int type = StringToInt( arg1 );
+	
+	if( type == 0 )
+	{
+		SaveConfig_Spawn( client, FILE_SPAWN, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
+		ReplyToCommand( client, "[SAFEROOM]: Bounding Box type SPAWN saved!!" );
+	}
 	return Plugin_Handled;
 }
 
@@ -1759,7 +1753,7 @@ bool ReadConfig_Cpdoor( const char[] filename, const char[] mapname, char[] buff
 		return false;
 	}
 	
-	kv.GetString( "rotate", buffer, 8 ); //error 035: argument type mismatch (argument 3)
+	kv.GetString( "rotate", buffer, 8 );
 	kv.Rewind();
 	kv.ExportToFile( filepath );
 	delete kv;
