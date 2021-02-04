@@ -107,11 +107,11 @@ enum struct ClientManager
 	
 	void Reset()
 	{
-		this.iSpawnCount 		= 0;
-		this.iStateRoom 		= ROOM_STATE_OUTDOOR;
-		this.bIsSoundBurn		= false;
+		this.iSpawnCount 	= 0;
+		this.iStateRoom 	= ROOM_STATE_OUTDOOR;
+		this.bIsSoundBurn	= false;
 		this.bIsUsingDefib	= false;
-		this.bIsJoinGame		= true;
+		this.bIsJoinGame	= true;
 	}
 }
 ClientManager g_CMClient[MAXPLAYERS+1];
