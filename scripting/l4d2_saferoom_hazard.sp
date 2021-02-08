@@ -1,8 +1,6 @@
 #define PLUGIN_VERSION "1.1.0"
 /*
 =================== TODO ==================
-- radio use waiting teleport, damage.
-- rescue vehicle ready teleport, damage.
 - saferoom burning effect/particle by LUX@ChocolateCat
 
 
@@ -13,15 +11,19 @@ v 1.1.0
 	@Mart
 	@Impact
 	@Silver
+	@Dysphie
 - plugins conversion to new syntax.
 - changed command for force enter.
 - change detection from radius to sdkhook sensor.
 - renaming cvar
 - added damage for checkpoint area if player refuse to enter
+- added damage for finale vehicle if player refuse to enter
+- added beam ring damage indicator.
+- added developer command for custom map support outside l4d1/2 stock map.
 
 
 
-last edited 15/Dec/2013
+last edited 15 Dec 2013
 v 1.0.3
 - Fixed round restart at same map, door index is changing.
 v 1.0.2
@@ -33,18 +35,19 @@ v 1.0.1
 - Fixed infected teleport script error..
 */
 
-#pragma	newdecls required
-#pragma	semicolon 1
+#pragma	 newdecls required
+#pragma	 semicolon 1
 #include <sourcemod>
 #include <sdktools>
 #include <sdkhooks>
 #include <saferoom_config.sp>
 
 //======== Global ConVar ========//
-ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,	g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
-		g_ConVarSafeHazard_DamageIncap,		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,		g_ConVarSafeHazard_EventNumber,	g_ConVarSafeHazard_CmdDoor,
-		g_ConVarSafeHazard_ReferanceToy,	g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_ExitMsg, 		g_ConVarSafeHazard_IsDamageBot,	g_ConVarSafeHazard_BloodColor,
-		g_ConVarSafeHazard_IsDebugging,		g_ConVarSafeHazard_EnableEnemy;
+ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,		g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
+		g_ConVarSafeHazard_DamageIncap,		g_ConVarSafeHazard_LeaveSpawnMsg,		g_ConVarSafeHazard_EventDoor,			g_ConVarSafeHazard_EventNumber,	g_ConVarSafeHazard_CmdDoor,
+		g_ConVarSafeHazard_ReferanceToy,	g_ConVarSafeHazard_CheckpoinCountdown,	g_ConVarSafeHazard_VehicleCountdown,	g_ConVarSafeHazard_ExitMsg,		g_ConVarSafeHazard_IsDamageBot,
+		g_ConVarSafeHazard_BloodColor,		g_ConVarSafeHazard_IsDebugging,			g_ConVarSafeHazard_EnableEnemy, 		g_ConVarSafeHazard_BotTrigger,	g_ConVarSafeHazard_BeamRing,
+		g_ConVarSafeHazard_SpawnDamage,		g_ConVarSafeHazard_CheckpoinDamage,		g_ConVarSafeHazard_VehicleDamage;
 
 
 //========== Global Cvar ========//
@@ -62,9 +65,15 @@ bool	g_bCvar_DoorWinState;
 bool	g_bCvar_ReferanceToy;
 int		g_iCvar_ToyAlpha;
 float	g_fCvar_CheckpoinCountdown;
+float	g_fCvar_VehiclsCountdown;
 bool	g_bCvar_NotifyExit;
 bool	g_bCvar_DamageBot;
 bool	g_bCvar_EnableEnemy;
+bool	g_bCvar_BotTrigger;
+bool	g_bCvar_RingEnable;
+bool	g_bCvar_DamageSpawn;
+bool	g_bCvar_DamageCheckpoint;
+bool	g_bCvar_DamageFinale;
 int		g_iCvar_BloodColor[4];
 bool	g_bCvar_IsDebugging;
 
@@ -81,31 +90,40 @@ public Plugin myinfo =
 
 public void OnPluginStart()
 {
-	CreateConVar( "hazard_version", PLUGIN_VERSION, " ", FCVAR_DONTRECORD);
-	g_ConVarSafeHazard_PluginEnable			= CreateConVar( "hazard_plugin_enable",		"1",	"0:Off,  1:On,  Toggle plugin On/Off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_NotifySpawn1			= CreateConVar( "hazard_notify_leave1",		"20",	"Timer first notify to player to leave safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
-	g_ConVarSafeHazard_NotifySpawn2			= CreateConVar( "hazard_notify_leave2",		"10",	"Timer damage countdown after 'hazard_notify_leave1'", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
-	g_ConVarSafeHazard_Radius				= CreateConVar( "hazard_checkpoint_radius",	"600",	"Player distance from checkpoint door consider near.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 300.0, true, 1000.0 );
-	g_ConVarSafeHazard_DamageAlive			= CreateConVar( "hazard_damage_alive",		"1",	"Health we knock off player per hit if he alive.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
-	g_ConVarSafeHazard_DamageIncap			= CreateConVar( "hazard_damage_incap",		"10",	"Health we knock off player per hit if he incap.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
-	g_ConVarSafeHazard_LeaveSpawnMsg		= CreateConVar( "hazard_leave_message",		"1",	"0:Off  | 1:On, Announce spawn area damage message.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_EventDoor			= CreateConVar( "hazard_manual_safe",		"0",	"0:Off  | 1:On, Checkpoint door manually closed, all player force teleport inside.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_EventNumber			= CreateConVar( "hazard_manual_number",		"0",	"0:Off  | Checkpoint door manually closed, this percentage of players inside checkpoint area will force teleport everyone", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 100.0 );
-	g_ConVarSafeHazard_CmdDoor				= CreateConVar( "hazard_command_door",		"0",	"0:Open | 1:Closed, command 'srh_enter' will open/closed checkpoint door after force teleport all player.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_ReferanceToy			= CreateConVar( "hazard_saferoom_toy",		"1",	"0:Off, 1:On, If on, developer teleport reference visible inside safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_CheckpoinCountdown	= CreateConVar( "hazard_warning",			"30",	"If player refuse to enter second area, do damage after this long(seconds).", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 60.0 );
-	g_ConVarSafeHazard_ExitMsg				= CreateConVar( "hazard_exit_message",		"1",	"0:Off, 1:On, Display hint text everytime player enter/exit.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_IsDamageBot			= CreateConVar( "hazard_damage_bot",		"0",	"0:Off, 1:On, Apply damage to survivor bot.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_BloodColor			= CreateConVar( "hazard_blood_color",		"0,255,0",	"Damage blood color RGB separated by commas", FCVAR_SPONLY|FCVAR_NOTIFY );
-	g_ConVarSafeHazard_IsDebugging			= CreateConVar( "hazard_debugging_enable",	"0",	"0:Off, 1:On, Toggle debugging on/off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
-	g_ConVarSafeHazard_EnableEnemy			= CreateConVar( "hazard_debugging_enemy",	"1",	"0:No enemy, 1:With enemy, Toggle enable enemy in debugging mode..", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	CreateConVar( "l4d2_hazard_version", PLUGIN_VERSION, " ", FCVAR_DONTRECORD);
+	g_ConVarSafeHazard_PluginEnable			= CreateConVar( "l4d2_hazard_plugin_enable",		"1",	"0:Off,  1:On,  Toggle plugin On/Off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_NotifySpawn1			= CreateConVar( "l4d2_hazard_notify_leave1",		"20",	"Timer first notify to player to leave safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
+	g_ConVarSafeHazard_NotifySpawn2			= CreateConVar( "l4d2_hazard_notify_leave2",		"10",	"Timer damage countdown after 'hazard_notify_leave1'", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 60.0 );
+	g_ConVarSafeHazard_Radius				= CreateConVar( "l4d2_hazard_checkpoint_radius",	"800",	"Player distance from checkpoint door consider near.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 300.0, true, 2000.0 );
+	g_ConVarSafeHazard_DamageAlive			= CreateConVar( "l4d2_hazard_damage_alive",			"1",	"Health we knock off player per hit if he alive.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
+	g_ConVarSafeHazard_DamageIncap			= CreateConVar( "l4d2_hazard_damage_incap",			"10",	"Health we knock off player per hit if he incap.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 1.0, true, 100.0 );
+	g_ConVarSafeHazard_LeaveSpawnMsg		= CreateConVar( "l4d2_hazard_leave_message",		"1",	"0:Off  | 1:On, Announce spawn area damage message.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_EventDoor			= CreateConVar( "l4d2_hazard_manual_safe",			"0",	"0:Off  | 1:On, Checkpoint door manually closed, all player force teleport inside.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_EventNumber			= CreateConVar( "l4d2_hazard_manual_number",		"0",	"0:Off  | Checkpoint door manually closed, this percentage of players inside checkpoint area will force teleport everyone", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 100.0 );
+	g_ConVarSafeHazard_CmdDoor				= CreateConVar( "l4d2_hazard_command_door",			"0",	"0:Open | 1:Closed, command 'srh_enter' will open/closed checkpoint door after force teleport all player.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_ReferanceToy			= CreateConVar( "l4d2_hazard_saferoom_toy",			"1",	"0:Off, 1:On, If on, developer teleport reference visible inside safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_CheckpoinCountdown	= CreateConVar( "l4d2_hazard_alert_checkpoint",		"30",	"If player refuse to enter second area, do damage after this long(seconds).", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 60.0 );
+	g_ConVarSafeHazard_VehicleCountdown		= CreateConVar( "l4d2_hazard_alert_vehicle",		"30",	"If player refuse to enter rescue vehicle, do damage after this long(seconds).", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 60.0 );
+	g_ConVarSafeHazard_ExitMsg				= CreateConVar( "l4d2_hazard_exit_message",			"1",	"0:Off, 1:On, Display hint text everytime player enter/exit.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_IsDamageBot			= CreateConVar( "l4d2_hazard_damage_bot",			"0",	"0:Off, 1:On, Apply damage to survivor bot.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_BloodColor			= CreateConVar( "l4d2_hazard_blood_color",			"0,255,0",	"Damage blood color RGB separated by commas", FCVAR_SPONLY|FCVAR_NOTIFY );
+	g_ConVarSafeHazard_IsDebugging			= CreateConVar( "l4d2_hazard_debugging_enable",		"0",	"0:Off, 1:On, Toggle debugging on/off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_EnableEnemy			= CreateConVar( "l4d2_hazard_debugging_enemy",		"1",	"0:No enemy, 1:With enemy, Toggle enable enemy in debugging mode..", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_BotTrigger			= CreateConVar( "l4d2_hazard_bottrigger",			"0",	"0:Off, 1:Allow bot to trigger/start damage timer.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_BeamRing				= CreateConVar( "l4d2_hazard_enable_ring",			"1",	"0:Off, 1:Enable beam ring indicator", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_SpawnDamage			= CreateConVar( "l4d2_hazard_spawn_damage",			"1",	"0:Off, 1:Enable start area damage.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_CheckpoinDamage		= CreateConVar( "l4d2_hazard_checkpoint_damage",	"1",	"0:Off, 1:Enable checkpoint damage.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_VehicleDamage		= CreateConVar( "l4d2_hazard_finale_damage",		"1",	"0:Off, 1:Enable finale damage.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	AutoExecConfig( true, "l4d2_saferoom_hazard" );
 
 	
 	HookEvent( "survivor_rescued",			EVENT_PlayerRescued );
 	HookEvent( "player_spawn",				EVENT_PlayerSpawn );
-	HookEvent( "round_end",					EVENT_RoundEnd );
-	//HookEvent( "mission_lost",			EVENT_RoundEnd );
+	HookEvent( "player_first_spawn",		EVENT_PlayerSpawn );
+	HookEvent( "round_end",					EVENT_RoundWinLost );
+	HookEvent( "mission_lost",				EVENT_RoundWinLost );
+	HookEvent( "finale_vehicle_leaving",	EVENT_RoundWinLost );
+	HookEvent( "finale_win",				EVENT_RoundWinLost );
 	HookEvent( "finale_start",				EVENT_Finale );
 	HookEvent( "door_close",				EVENT_DoorClose );
 	HookEvent( "player_death",				EVENT_PlayerDeath );
@@ -115,15 +133,15 @@ public void OnPluginStart()
 	HookEvent( "defibrillator_used_fail",	EVENT_Defibrillator );
 	HookEvent( "defibrillator_interrupted",	EVENT_Defibrillator );
 	HookEvent( "defibrillator_used",		EVENT_Defibrillator );
-	HookEvent( "finale_escape_start",		EVENT_FinaleStart );
-	HookEvent( "finale_vehicle_ready",		EVENT_FinaleStart );
+	HookEvent( "finale_escape_start",		EVENT_FinaleStartWin );
+	HookEvent( "finale_vehicle_ready",		EVENT_FinaleStartWin );
 	
 
 	//================= Admin and developer command =================//
 	RegAdminCmd( "srh_enter",		Command_ForceEnter_CheckpointRoom,		ADMFLAG_GENERIC, "Admin jump command. Force everyone into checkpoint saferoom." );
 	RegAdminCmd( "srh_jump",		Command_ForceEnter_JumpSaferoom,		ADMFLAG_GENERIC, "Admin jump command. Args | 0:spawn | 1:checkpoint | 2:current position." );
 	RegAdminCmd( "srh_box",			Command_DeveloperBoundingBox_Create,	ADMFLAG_GENERIC, "Admin command. Prototype trigger touch bounding box. Range 0 ~ 6" );
-	RegAdminCmd( "srh_save",		Command_DeveloperBoundingBox_Save,		ADMFLAG_GENERIC, "Admin command. Save generated bounding box. Args | 0:spawn |" );
+	RegAdminCmd( "srh_save",		Command_DeveloperBoundingBox_Save,		ADMFLAG_GENERIC, "Admin command. Save generated bounding box. Args pos | spawn | vehicle1 | vehicle2" );
 	
 	/*
 		bind home			"say !srh_box 1 10"
@@ -143,14 +161,20 @@ public void OnPluginStart()
 		
 		bind kp_end			"say !srh_box 6 15" 	//<< cant rotate trigger
 		bind kp_pgdn		"say !srh_box 6 -15" 	//<< cant rotate trigger
+		
+		bind kp_ins			"say !srh_save vehicle1"
+		bind kp_del			"say !srh_save vehicle2"
 	*/
 
 	//=================== Checkpoint room trigger ===================//
 	HookEntityOutput( "info_changelevel",		"OnStartTouch",		EntityOutput_RescueArea_OnStartTouch );
 	HookEntityOutput( "info_changelevel",		"OnEndTouch",		EntityOutput_RescueArea_OnEndTouch );
+	
 	HookEntityOutput( "trigger_changelevel",	"OnStartTouch",		EntityOutput_RescueArea_OnStartTouch );
 	HookEntityOutput( "trigger_changelevel",	"OnEndTouch",		EntityOutput_RescueArea_OnEndTouch );
-
+	
+	HookEntityOutput( "trigger_multiple",		"OnStartTouch",		EntityOutput_Multiple_OnStartTouch );
+	HookEntityOutput( "trigger_multiple",		"OnEndTouch",		EntityOutput_Multiple_OnEndTouch );
 	
 	g_ConVarSafeHazard_PluginEnable.AddChangeHook(	ConVar_Changed );
 	g_ConVarSafeHazard_NotifySpawn1.AddChangeHook( ConVar_Changed );
@@ -164,11 +188,17 @@ public void OnPluginStart()
 	g_ConVarSafeHazard_CmdDoor.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_ReferanceToy.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_CheckpoinCountdown.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_VehicleCountdown.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_ExitMsg.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_IsDamageBot.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_BloodColor.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_IsDebugging.AddChangeHook( ConVar_Changed );
 	g_ConVarSafeHazard_EnableEnemy.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_BotTrigger.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_BeamRing.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_SpawnDamage.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_CheckpoinDamage.AddChangeHook( ConVar_Changed );
+	g_ConVarSafeHazard_VehicleDamage.AddChangeHook( ConVar_Changed );
 	
 	UpdateCvar();
 }
@@ -208,11 +238,11 @@ public void OnMapStart()
 	
 	
 	// get spawn area bounding box config
+	char valBuff[3][32];
 	char keyBuff[VEC_LEN][32];
-	g_EMEntity.bIsCfgLoaded = ReadConfig_Spawn( FILE_SPAWN, g_EMEntity.sCurrentMap, keyBuff );
-	if( g_EMEntity.bIsCfgLoaded )
+	g_EMEntity.bIsSpawnLoaded = ReadConfig_Spawn( FILE_SPAWN, g_EMEntity.sCurrentMap, keyBuff );
+	if( g_EMEntity.bIsSpawnLoaded )
 	{
-		char valBuff[3][32];
 		ExplodeString( keyBuff[VEC_POS], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
 		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fBoxPos );
 		
@@ -226,6 +256,18 @@ public void OnMapStart()
 		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fBoxMax );
 	}
 	
+	// get finale vehicle position
+	char keyBuff2[2][32];
+	g_EMEntity.bIsFinaleLoaded = ReadConfig_Finale( FILE_FINALE, g_EMEntity.sCurrentMap, keyBuff2 );
+	if( g_EMEntity.bIsFinaleLoaded )
+	{
+		ExplodeString( keyBuff2[0], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
+		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fPos_Vehicle1 );
+		
+		ExplodeString( keyBuff2[1], ",", valBuff, sizeof( valBuff ), sizeof( valBuff[] ));
+		ConvertStringToFloat( valBuff, sizeof( valBuff ), g_EMEntity.fPos_Vehicle2 );
+	}
+	
 	char mapname[128];
 	Format( mapname, sizeof( mapname ), "Map Start: %s", g_EMEntity.sCurrentMap );
 	Print_ServerText( mapname, g_bCvar_IsDebugging );
@@ -234,6 +276,7 @@ public void OnMapStart()
 public void OnMapEnd()
 {
 	g_EMEntity.TimerKill();
+	Print_ServerText( "Map End", g_bCvar_IsDebugging );
 }
 
 public void OnClientPutInServer( int client )
@@ -241,6 +284,7 @@ public void OnClientPutInServer( int client )
 	if ( client > 0 )
 	{
 		g_CMClient[client].Reset();
+		g_CMClient[client].iSpawnCount = g_iCvar_Notify_Total;
 	}
 }
 
@@ -255,7 +299,7 @@ public void OnEntityCreated( int entity, const char[] classname )
 	
 	if( IsValidEntity( entity ))
 	{
-		if( ChrCmp( classname, "infected" ) || ChrCmp( classname, "witch" ))
+		if( StrEqual( classname, "infected", false ) || StrEqual( classname, "witch", false ))
 		{
 			CreateTimer( 0.3, Timer_KillICommonWitch, EntIndexToEntRef( entity ), TIMER_FLAG_NO_MAPCHANGE );
 		}
@@ -281,9 +325,15 @@ void UpdateCvar()
 	g_fCvar_DoorNumber			= g_ConVarSafeHazard_EventNumber.FloatValue;
 	g_bCvar_DoorWinState		= g_ConVarSafeHazard_CmdDoor.BoolValue;
 	g_fCvar_CheckpoinCountdown	= g_ConVarSafeHazard_CheckpoinCountdown.FloatValue;
+	g_fCvar_VehiclsCountdown	= g_ConVarSafeHazard_VehicleCountdown.FloatValue;
 	g_bCvar_NotifyExit			= g_ConVarSafeHazard_ExitMsg.BoolValue;
 	g_bCvar_DamageBot			= g_ConVarSafeHazard_IsDamageBot.BoolValue;
 	g_bCvar_EnableEnemy			= g_ConVarSafeHazard_EnableEnemy.BoolValue;
+	g_bCvar_BotTrigger			= g_ConVarSafeHazard_BotTrigger.BoolValue;
+	g_bCvar_RingEnable			= g_ConVarSafeHazard_BeamRing.BoolValue;
+	g_bCvar_DamageSpawn			= g_ConVarSafeHazard_SpawnDamage.BoolValue;
+	g_bCvar_DamageCheckpoint	= g_ConVarSafeHazard_CheckpoinDamage.BoolValue;
+	g_bCvar_DamageFinale		= g_ConVarSafeHazard_VehicleDamage.BoolValue;
 	
 	g_iCvar_Notify_Total = g_iCvar_NotifySpawn1 + g_iCvar_NotifySpawn2;
 	
@@ -313,10 +363,10 @@ void UpdateCvar()
 		
 		if( g_bCvar_IsDebugging )
 		{
-			if( g_EMEntity.iEntTrigger != -1 )
+			if( g_EMEntity.iSpawnTrigger != -1 )
 			{
 				delete g_EMEntity.hTimer[TIMER_LASER1];
-				g_EMEntity.hTimer[TIMER_LASER1] = CreateTimer( 0.3, Timer_DeveloperShowBeam1, EntIndexToEntRef( g_EMEntity.iEntTrigger ), TIMER_REPEAT );
+				g_EMEntity.hTimer[TIMER_LASER1] = CreateTimer( 0.3, Timer_DeveloperShowBeam1, EntIndexToEntRef( g_EMEntity.iSpawnTrigger ), TIMER_REPEAT );
 			}
 			if( g_EMEntity.iDoor_Spawn > MaxClients )
 			{
@@ -445,6 +495,14 @@ public Action Command_ForceEnter_JumpSaferoom( int client, int args )
 			
 			TeleportPlayer( client, pos, SND_TELEPORT );
 		}
+		else if ( g_EMEntity.bIsFinaleLoaded )
+		{
+			float pos[3];
+			pos = view_as<float>( g_EMEntity.fPos_Vehicle1 );
+			pos[2] += 15.0;
+			
+			TeleportPlayer( client, pos, SND_TELEPORT );
+		}
 		else
 		{
 			ReplyToCommand( client, "[SAFEROOM]: Invalid Checkpoint pos referance!!" );
@@ -496,9 +554,12 @@ public Action Command_DeveloperBoundingBox_Create( int client, int args )
 		
 		if( TraceRay_GetEndpoint( eyePos, eyeAng, client, g_fVecPos ))
 		{
-			g_iEntityTest = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR1], g_fVecPos, g_fVecMin , g_fVecMax );
+			g_iEntityTest = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR], g_fVecPos, g_fVecMin , g_fVecMax );
 			if( g_iEntityTest != -1 )
 			{
+				SDKHook( g_iEntityTest, SDKHook_StartTouch, ConstructorArea_OnStartTouched );
+				SDKHook( g_iEntityTest, SDKHook_EndTouch, ConstructorArea_OnEndTouch );
+			
 				delete g_EMEntity.hTimer[TIMER_LASER2];
 				g_EMEntity.hTimer[TIMER_LASER2] = CreateTimer( 0.3, Timer_DeveloperShowBeam2, EntIndexToEntRef( g_iEntityTest ), TIMER_REPEAT);
 				
@@ -589,9 +650,12 @@ public Action Command_DeveloperBoundingBox_Create( int client, int args )
 				g_fVecMax[2] += size;
 			}
 			
-			g_iEntityTest = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR1], g_fVecPos, g_fVecMin , g_fVecMax );
+			g_iEntityTest = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR], g_fVecPos, g_fVecMin , g_fVecMax );
 			if( g_iEntityTest != -1 )
 			{
+				SDKHook( g_iEntityTest, SDKHook_StartTouch, ConstructorArea_OnStartTouched );
+				SDKHook( g_iEntityTest, SDKHook_EndTouch, ConstructorArea_OnEndTouch );
+				
 				g_EMEntity.hTimer[TIMER_LASER2] = CreateTimer( 0.3, Timer_DeveloperShowBeam2, EntIndexToEntRef( g_iEntityTest ), TIMER_REPEAT);
 				
 				int rand = GetRandomInt( 0, 2 );
@@ -639,33 +703,58 @@ public Action Command_DeveloperBoundingBox_Save( int client, int args )
 		return Plugin_Handled;
 	}
 	
-	if( g_iEntityTest == -1 || !IsValidEntity( g_iEntityTest ))
-	{
-		ReplyToCommand( client, "[SAFEROOM]: No Bounding Box to save!!" );
-		return Plugin_Handled;
-	}
-	
-	char arg1[8];
+	char arg1[32];
 	GetCmdArg( 1, arg1, sizeof( arg1 ));
-	int type = StringToInt( arg1 );
-	
-	if( type == 0 )
+	if( StrEqual( arg1, "pos", false ))
 	{
+		float pos[3];
+		GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
+		ReplyToCommand( client, "[SAFEROOM]: Position | Map: %s | { %.2f, %.2f, %.2f }", g_EMEntity.sCurrentMap, pos[0], pos[1], pos[2] );
+	}
+	else if( StrEqual( arg1, "spawn", false ))
+	{
+		if( g_iEntityTest == -1 || !IsValidEntity( g_iEntityTest ))
+		{
+			ReplyToCommand( client, "[SAFEROOM]: No Bounding Box to save!!" );
+			return Plugin_Handled;
+		}
+		
 		SaveConfig_Spawn( client, FILE_SPAWN, g_EMEntity.sCurrentMap, g_fVecPos, g_fVecAng, g_fVecMin, g_fVecMax );
-		ReplyToCommand( client, "[SAFEROOM]: Bounding Box type SPAWN saved!!" );
+	}
+	else if( StrEqual( arg1, "vehicle1", false ))
+	{
+		SaveConfig_Finale( client, FILE_FINALE, g_EMEntity.sCurrentMap, 1 );
+	}
+	else if( StrEqual( arg1, "vehicle2", false ))
+	{
+		SaveConfig_Finale( client, FILE_FINALE, g_EMEntity.sCurrentMap, 2 );
 	}
 	return Plugin_Handled;
 }
 
-public void EVENT_RoundEnd( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_RoundWinLost( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
-	OnMapEnd();
-	
 	g_EMEntity.Reset();
-	
-	Print_ServerText( "Round End!!", g_bCvar_IsDebugging );
+	g_EMEntity.bIsRoundStop = true;
+		
+	if( StrEqual( name, "round_end", false ))
+	{
+		Print_ServerText( "Round End!!", g_bCvar_IsDebugging );
+	}
+	else if( StrEqual( name, "mission_lost", false ))
+	{
+		Print_ServerText( "Finale Lost", g_bCvar_IsDebugging );
+	}
+	else if( StrEqual( name, "finale_win", false ))
+	{
+		Print_ServerText( "Finale Win", g_bCvar_IsDebugging );
+	}
+	else if( StrEqual( name, "finale_vehicle_leaving", false ))
+	{
+		Print_ServerText( "Vehicle Leaving", g_bCvar_IsDebugging );
+	}
 }
 
 public void EVENT_Finale( Event event, const char[] name, bool dontBroadcast )
@@ -759,7 +848,7 @@ public void EVENT_BotPlayerReplace( Event event, const char[] name, bool dontBro
 	if ( Client_IsValid( player ) && Client_IsValid( bot ))
 	{
 		// player takeover bot
-		if( ChrCmp( name, "bot_player_replace" ))
+		if( StrEqual( name, "bot_player_replace", false ))
 		{
 			g_CMClient[player].iStateRoom = g_CMClient[bot].iStateRoom;
 			g_CMClient[player].iSpawnCount = g_CMClient[bot].iSpawnCount;
@@ -769,7 +858,7 @@ public void EVENT_BotPlayerReplace( Event event, const char[] name, bool dontBro
 			Print_ServerText( "Player takeover Bot", g_bCvar_IsDebugging );
 		}
 		// bot takeover player
-		else if( ChrCmp( name, "player_bot_replace" ))
+		else if( StrEqual( name, "player_bot_replace", false ))
 		{
 			g_CMClient[bot].iStateRoom	= g_CMClient[player].iStateRoom;
 			g_CMClient[bot].iSpawnCount = g_CMClient[player].iSpawnCount;
@@ -786,17 +875,17 @@ public void EVENT_Defibrillator( Event event, const char[] name, bool dontBroadc
 	int subject	= GetClientOfUserId( event.GetInt( "subject" ));
 	if ( Client_IsValid( subject ))
 	{
-		if( ChrCmp( name, "defibrillator_begin" ))
+		if( StrEqual( name, "defibrillator_begin", false ))
 		{
 			g_CMClient[subject].bIsUsingDefib = true;
 			Print_ServerText( "Defibrillator Begin", g_bCvar_IsDebugging );
 		}
-		else if( ChrCmp( name, "defibrillator_used_fail" ) || ChrCmp( name, "defibrillator_interrupted" ))
+		else if( StrEqual( name, "defibrillator_used_fail", false ) || StrEqual( name, "defibrillator_interrupted", false ))
 		{
 			g_CMClient[subject].bIsUsingDefib = false;
 			Print_ServerText( "Defibrillator Fail/Interrupted", g_bCvar_IsDebugging );
 		}
-		else if( ChrCmp( name, "defibrillator_used" ))
+		else if( StrEqual( name, "defibrillator_used", false ))
 		{
 			g_CMClient[subject].bIsUsingDefib = false;
 			if( !IsFakeClient( subject ))
@@ -808,45 +897,22 @@ public void EVENT_Defibrillator( Event event, const char[] name, bool dontBroadc
 	}
 }
 
-public void EVENT_FinaleStart( Event event, const char[] name, bool dontBroadcast ) // finale damage under development
+public void EVENT_FinaleStartWin( Event event, const char[] name, bool dontBroadcast ) // finale damage under development
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
-	bool finale = false;
-	if( ChrCmp( name, "finale_escape_start" ))
+	if( StrEqual( name, "finale_escape_start", false ))
 	{
-		finale = true;
+		if( g_bCvar_NotifyExit ) PrintHintTextToAll( "*** Finale Escape Has Started ***" );
+		
 		Print_ServerText( "finale_escape_start", g_bCvar_IsDebugging );
 	}
-	else if( ChrCmp( name, "finale_vehicle_ready" ))
+	else if( StrEqual( name, "finale_vehicle_ready", false ))
 	{
-		finale = true;
-		Print_ServerText( "finale_vehicle_ready", g_bCvar_IsDebugging );
-	}
-	
-	if( finale )
-	{
-		// trigger_multiple
-		// stadium_exit_right_escape_trigger
-		// escape_right_relay
+		g_EMEntity.bIsVehiclReady = true;
+		if( g_bCvar_NotifyExit ) PrintHintTextToAll( "*** Finale Vehicle Is Ready ***" );
 		
-		int entity = -1;
-		while (( entity = FindEntityByClassname( entity, "trigger_multiple")) != -1 )
-		{
-			if( IsValidEntity( entity ))
-			{
-				char entity_name[250];
-				GetEntPropString( entity, Prop_Data, "m_iName", entity_name, sizeof( entity_name ));
-				//PrintToChatAll( "className: %s", entity_name );
-				if( ChrCmp( entity_name, "stadium_exit_right_escape_trigger" ) || ChrCmp( entity_name, "escape_right_relay" ))
-				{
-					//PrintToChatAll( "Trigger: %s", entity_name );
-					
-					SDKHook( entity, SDKHook_StartTouch, FinaleArea_OnStartTouch );
-					SDKHook( entity, SDKHook_EndTouch, FinaleArea_OnEndTouch );
-				}
-			}
-		}
+		Print_ServerText( "finale_vehicle_ready", g_bCvar_IsDebugging );
 	}
 }
 
@@ -864,16 +930,11 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 			{
 				if( g_CMClient[client].bIsUsingDefib ) return;
 				
-				if( !IsFakeClient( client ))
-				{
-					Print_ServerText( "Player Spawn", g_bCvar_IsDebugging );
-				}
+				// set player spawn room max stay count.
+				g_CMClient[client].iSpawnCount = g_iCvar_Notify_Total;
 				
 				// create spawn area trigger and teleport referance
 				Create_MapTouchTrigger( client );
-				
-				// set player spawn room max stay count.
-				g_CMClient[client].iSpawnCount = g_iCvar_Notify_Total;
 			}
 			case TEAM_INFECTED:
 			{
@@ -888,26 +949,6 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 
 
 /////////////////////////////////////////////////////////////
-//================ Finale Vehicle Trigger =================//
-/////////////////////////////////////////////////////////////
-public Action FinaleArea_OnStartTouch( int entity, int client )
-{
-	if( !Survivor_IsValid( client )) return Plugin_Continue;
-	
-	//PrintToChatAll( "OnEscapeTrigger_Touched" );
-	return Plugin_Continue;
-}
-
-public Action FinaleArea_OnEndTouch( int entity, int client )
-{
-	if( !Survivor_IsValid( client )) return Plugin_Continue;
-	
-	//PrintToChatAll( "OnEscapeTrigger_EndTouch" );
-	return Plugin_Continue;
-}
-
-
-/////////////////////////////////////////////////////////////
 //================== Rescue Area Trigger ==================// @Mart
 /////////////////////////////////////////////////////////////
 public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int caller, int client, float time )
@@ -916,7 +957,7 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 	
 	float pos[3];
 	GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) < DIST_RADIUS )
+	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) < DIST_DOOR )
 	{
 		// set client no longer joined in midgame and damage applied
 		SetClientJoinStatus( client );
@@ -926,7 +967,8 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 		
 		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Checkpoint Area", client );
 		
-		CheckRescueArea();
+		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
+		CheckCheckpointArea();
 	}
 }
 
@@ -936,23 +978,95 @@ public void EntityOutput_RescueArea_OnEndTouch( const char[] output, int caller,
 	
 	float pos[3];
 	GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
-	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) < DIST_RADIUS )
+	if( GetVectorDistance( pos, g_EMEntity.fPos_Rescue ) < DIST_DOOR )
 	{
 		// set client no longer joined in midgame and damage applied
 		SetClientJoinStatus( client );
 		
 		g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Checkpoint Area", client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Exiting Checkpoint Area", client );
 		
-		CheckRescueArea();
+		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
+		CheckCheckpointArea();
 	}
 }
 
 
 /////////////////////////////////////////////////////////////
-//=================== Spawn Area Trigger ==================//
+//=============== Finale/Spawn Area Trigger ===============//
 /////////////////////////////////////////////////////////////
-public Action SpawnArea_OnStartTouched( int entity, int client )
+public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller, int client, float time )
+{
+	if( !Survivor_IsValid( client )) return;
+	
+	float pos[3];
+	GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
+	//if( g_EMEntity.bIsSpawnLoaded && GetEntityMoveType( client ) != MOVETYPE_LADDER && GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_DOOR )
+	if( g_EMEntity.bIsSpawnLoaded && caller == g_EMEntity.iSpawnTrigger )
+	{
+		// set client no longer joined in midgame and damage applied
+		SetClientJoinStatus( client );
+		
+		g_CMClient[client].iStateRoom = ROOM_STATE_SPAWN;
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Spawn Area", client );
+	}
+	else if( g_EMEntity.bIsFinaleLoaded && ( GetVectorDistance( pos, g_EMEntity.fPos_Vehicle1 ) < DIST_FINALE || GetVectorDistance( pos, g_EMEntity.fPos_Vehicle2 ) < DIST_FINALE ))
+	{
+		if( g_EMEntity.bIsVehiclReady )
+		{
+			StopBurningSound( client );
+			g_CMClient[client].iStateRoom = ROOM_STATE_VEHICLE;
+			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Finale Area", client );
+			
+			if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
+			
+			// first player enter/left rescue vehicle and are finale, start finale damage timer
+			CheckFinaleVehicle();
+		}
+	}
+}
+
+public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, int client, float time )
+{
+	if( !Survivor_IsValid( client )) return;
+	
+	float pos[3];
+	GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
+	//if( g_EMEntity.bIsSpawnLoaded && GetEntityMoveType( client ) != MOVETYPE_LADDER && GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_DOOR )
+	if( g_EMEntity.bIsSpawnLoaded && caller == g_EMEntity.iSpawnTrigger )
+	{
+		g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
+		
+		// set client no longer joined in midgame and damage applied
+		SetClientJoinStatus( client );
+		StopBurningSound( client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Exiting Spawn Area", client );
+		
+		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
+		
+		// first player enter/left spawn area and are not finale, start spawn area damage timer
+		CheckSpawnArea( client );
+	}
+	else if( g_EMEntity.bIsFinaleLoaded && ( GetVectorDistance( pos, g_EMEntity.fPos_Vehicle1 ) < DIST_FINALE || GetVectorDistance( pos, g_EMEntity.fPos_Vehicle2 ) < DIST_FINALE ))
+	{
+		if( g_EMEntity.bIsVehiclReady )
+		{
+			g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
+			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Exiting Finale Area", client );
+			
+			if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
+			
+			// first player enter/left rescue vehicle and are finale, start finale damage timer
+			CheckFinaleVehicle();
+		}
+	}
+}
+
+
+/////////////////////////////////////////////////////////////
+//================ Constructor Area Trigger ===============//
+/////////////////////////////////////////////////////////////
+public Action ConstructorArea_OnStartTouched( int entity, int client )
 {
 	if( !Survivor_IsValid( client )) return Plugin_Continue;
 	
@@ -960,51 +1074,16 @@ public Action SpawnArea_OnStartTouched( int entity, int client )
 	{
 		PrintHintText( client, "%N Entering Constructor Area", client );
 	}
-	else
-	{
-		float pos[3];
-		GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
-		if( GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_RADIUS )
-		{
-			// set client no longer joined in midgame and damage applied
-			SetClientJoinStatus( client );
-			
-			g_CMClient[client].iStateRoom = ROOM_STATE_SPAWN;
-			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Spawn Area", client );
-		}
-	}
 	return Plugin_Continue;
 }
 
-public Action SpawnArea_OnEndTouch( int entity, int client )
+public Action ConstructorArea_OnEndTouch( int entity, int client )
 {
 	if( !Survivor_IsValid( client )) return Plugin_Continue;
 	
 	if( entity == g_iEntityTest )
 	{
 		PrintHintText( client, "%N Exiting Constructor Area", client );
-	}
-	else
-	{
-		float pos[3];
-		GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
-		if( GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_RADIUS )
-		{
-			g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
-			
-			// set client no longer joined in midgame and damage applied
-			SetClientJoinStatus( client );
-			
-			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Left Spawn Area", client );
-			
-			// first player left spawn area and are not finale, start spawn rea damage timer
-			if( client != g_iEntityTest && g_EMEntity.hTimer[TIMER_GLOBAL] == null && !g_EMEntity.bIsRound_Finale )
-			{
-				g_EMEntity.hTimer[TIMER_GLOBAL] = CreateTimer( 1.0, Timer_GlobalDamage, _, TIMER_REPEAT );
-				
-				Print_ServerText( "Timer Spawn Damage has started", g_bCvar_IsDebugging );
-			}
-		}
 	}
 	return Plugin_Continue;
 }
@@ -1013,7 +1092,22 @@ public Action SpawnArea_OnEndTouch( int entity, int client )
 /////////////////////////////////////////////////////////////
 //========================= Timers ========================//
 /////////////////////////////////////////////////////////////
-public Action Timer_RescueCountdown( Handle timer )
+public Action Timer_CountdownFinale( Handle timer )
+{
+	for( int i = 1; i <= MaxClients; i ++ )
+	{
+		if( Survivor_InGame( i ) && !IsFakeClient( i ))
+		{
+			PrintToChat( i, "\x05[\x04WARNING\x05]: \x01Finale Vehicle damage has started!!" );
+			EmitSoundToClient( i, SND_WARNING );
+		}
+	}
+	g_EMEntity.iDamageType = DAMAGE_VEHICLE;
+	g_EMEntity.hTimer[TIMER_VEHICLE] = null;
+	return Plugin_Stop;
+}
+
+public Action Timer_CountdownCheckpoint( Handle timer )
 {
 	for( int i = 1; i <= MaxClients; i ++ )
 	{
@@ -1023,9 +1117,8 @@ public Action Timer_RescueCountdown( Handle timer )
 			EmitSoundToClient( i, SND_WARNING );
 		}
 	}
-	
-	g_EMEntity.bIsDamage_Rescue		= true;
-	g_EMEntity.hTimer[TIMER_RESCUE]	= null;
+	g_EMEntity.iDamageType = DAMAGE_CHECKPOINT;
+	g_EMEntity.hTimer[TIMER_CHECKPOINT]	= null;
 	return Plugin_Stop;
 }
 
@@ -1033,18 +1126,20 @@ public Action Timer_GlobalDamage( Handle timer )
 {
 	if( g_EMEntity.hTimer[TIMER_GLOBAL] != timer )
 	{
-		Print_ServerText( "Timer damage lost track and terminated", true );
-		
+		Print_ServerText( "Timer damage lost track/duplicate and terminated", true );
 		return Plugin_Stop;
 	}
 	
-	if( g_EMEntity.bIsRound_Finale || g_EMEntity.bIsRound_End )
+	if( g_EMEntity.bIsRoundStop )
 	{
 		g_EMEntity.hTimer[TIMER_GLOBAL] = null;
-		Print_ServerText( "Timer damage terminated for finale/round end", g_bCvar_IsDebugging );
-		
+		Print_ServerText( "Timer Stopped", true );
 		return Plugin_Stop;
 	}
+	
+	bool isSpawn	= false;
+	bool isRescue	= false;
+	bool isVehicle	= false;
 	
 	for( int i = 1; i <= MaxClients; i++ )
 	{
@@ -1057,35 +1152,18 @@ public Action Timer_GlobalDamage( Handle timer )
 			
 			if( !IsPlayerAlive( i ) || ( IsFakeClient( i ) && !g_bCvar_DamageBot )) continue;
 			
-			// checkpoint area damage
-			if( g_EMEntity.bIsDamage_Rescue )
-			{	
-				// survivor not in state just joined the game and outside rescue area
-				if( !g_CMClient[i].bIsJoinGame && g_CMClient[i].iStateRoom != ROOM_STATE_RESCUE )
-				{
-					// survivor has no attacker, continue damag.
-					if( !Survivor_IsPinned( i ))
-					{
-						// incap or ledge, kill him even faster.
-						if( Survivor_IsHopeless( i ))
-						{
-							Create_DamageEffect( i, 0, g_iCvar_DamageIncap );
-						}
-						else
-						{
-							Create_DamageEffect( i, 0, g_iCvar_DamageAlive );
-						}
-					}
-				}
-			}
-			// spawn area damage
-			else
+			switch( g_EMEntity.iDamageType )
 			{
-				// timer rescue damage countdown still not start, damage still not shifted to rescue area.
-				if( g_EMEntity.hTimer[TIMER_RESCUE] == null )
+				// spawn area damage
+				case DAMAGE_SPAWN: 
 				{
+					if( !g_bCvar_DamageSpawn || g_EMEntity.hTimer[TIMER_CHECKPOINT] != null ) continue;
+					
+					// timer rescue damage countdown still not start, damage still not shifted to rescue area.
 					if( g_CMClient[i].iSpawnCount < 0 )
 					{
+						if( isSpawn == false ) isSpawn = true;
+						
 						// survivor not in state just joined the game and inside spawn area
 						if( !g_CMClient[i].bIsJoinGame && g_CMClient[i].iStateRoom == ROOM_STATE_SPAWN )
 						{
@@ -1137,8 +1215,93 @@ public Action Timer_GlobalDamage( Handle timer )
 						}
 					}
 				}
+				// checkpoint area damage
+				case DAMAGE_CHECKPOINT: 
+				{
+					if( !g_bCvar_DamageCheckpoint ) continue;
+					
+					if( isRescue == false ) isRescue = true;
+					
+					// survivor not in state just joined the game and outside rescue area
+					if( !g_CMClient[i].bIsJoinGame && g_CMClient[i].iStateRoom != ROOM_STATE_RESCUE )
+					{
+						// survivor has no attacker, continue damag.
+						if( !Survivor_IsPinned( i ))
+						{
+							// incap or ledge, kill him even faster.
+							if( Survivor_IsHopeless( i ))
+							{
+								Create_DamageEffect( i, 0, g_iCvar_DamageIncap );
+							}
+							else
+							{
+								Create_DamageEffect( i, 0, g_iCvar_DamageAlive );
+							}
+						}
+					}
+				}
+				// finale vehicle damage
+				case DAMAGE_VEHICLE: 
+				{
+					if( !g_bCvar_DamageFinale ) continue;
+				
+					if( isVehicle == false ) isVehicle = true;
+					
+					// survivor not in state just joined the game and outside rescue area
+					if( !g_CMClient[i].bIsJoinGame && g_CMClient[i].iStateRoom != ROOM_STATE_VEHICLE )
+					{
+						// survivor has no attacker, continue damag.
+						if( !Survivor_IsPinned( i ))
+						{
+							// incap or ledge, kill him even faster.
+							if( Survivor_IsHopeless( i ))
+							{
+								Create_DamageEffect( i, 0, g_iCvar_DamageIncap );
+							}
+							else
+							{
+								Create_DamageEffect( i, 0, g_iCvar_DamageAlive );
+							}
+						}
+					}
+				}
 			}
 		}
+	}
+	
+	if( !g_bCvar_RingEnable ) return Plugin_Continue;
+	
+	float pos[3];
+	if( isSpawn )
+	{
+		CopyVector( g_EMEntity.fPos_Spawn, pos );
+	}
+	else if( isRescue )
+	{
+		CopyVector( g_EMEntity.fPos_Rescue, pos );
+	}
+	else if( isVehicle )
+	{
+		CopyVector( g_EMEntity.fPos_Vehicle1, pos );
+	}
+	pos[2] += 10.0;
+	
+	for( int i = 1; i <= 10; i++ )
+	{
+		if( isSpawn )
+		{
+			Create_BeamRingPoint( pos, g_iColor_Red );
+		}
+		else if( isRescue )
+		{
+			Create_BeamRingPoint( pos, g_iColor_Green );
+		}
+		else if( isVehicle )
+		{
+			Create_BeamRingPoint( pos, g_iColor_Purple );
+		}
+		pos[2] += 7.0;
+		
 	}
 	return Plugin_Continue;
 }
@@ -1178,9 +1341,29 @@ public Action Timer_KillIInfectedTank( Handle timer, any userid )
 /////////////////////////////////////////////////////////////
 //====================== Function =========================//
 /////////////////////////////////////////////////////////////
-void CheckRescueArea()
+void Create_BeamRingPoint( float pos[3], int color[4] )
 {
-	if( !g_EMEntity.bIsDamage_Rescue && g_EMEntity.hTimer[TIMER_RESCUE] == null )
+	//TE_SetupBeamRingPoint(const float center[3], float Start_Radius, float End_Radius, int ModelIndex, int HaloIndex, int StartFrame, int FrameRate, float Life, float Width, float Amplitude, const int Color[4], int Speed, int Flags)
+	TE_SetupBeamRingPoint( pos, 10.0, 400.0, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 1.0, 5.0, 0.0, color, 80, 0 );
+	TE_SendToAll();
+}
+
+void CheckSpawnArea( int client )
+{
+	if( client != g_iEntityTest && g_EMEntity.hTimer[TIMER_GLOBAL] == null && !g_EMEntity.bIsRound_Finale )
+	{
+		g_EMEntity.iDamageType = DAMAGE_SPAWN;
+		g_EMEntity.hTimer[TIMER_GLOBAL] = CreateTimer( 1.0, Timer_GlobalDamage, _, TIMER_REPEAT );
+		
+		Print_ServerText( "Timer Global has started", g_bCvar_IsDebugging );
+	}
+}
+
+void CheckCheckpointArea()
+{
+	if( !g_bCvar_DamageCheckpoint ) return;
+	
+	if( g_EMEntity.iDamageType != DAMAGE_CHECKPOINT && g_EMEntity.hTimer[TIMER_CHECKPOINT] == null )
 	{
 		float pos[3];
 		bool start = true;
@@ -1199,7 +1382,7 @@ void CheckRescueArea()
 		
 		if( start )
 		{
-			g_EMEntity.hTimer[TIMER_RESCUE] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_RescueCountdown, _, TIMER_FLAG_NO_MAPCHANGE );
+			g_EMEntity.hTimer[TIMER_CHECKPOINT] = CreateTimer( g_fCvar_CheckpoinCountdown, Timer_CountdownCheckpoint, _, TIMER_FLAG_NO_MAPCHANGE );
 			if( g_bCvar_LeaveSpawnMsg )
 			{
 				for( int i = 1; i <= MaxClients; i ++ )
@@ -1212,6 +1395,27 @@ void CheckRescueArea()
 			}
 			Print_ServerText( "Timer Rescue Damage has started", g_bCvar_IsDebugging );
 		}
+	}
+}
+
+void CheckFinaleVehicle()
+{
+	if( !g_bCvar_DamageFinale ) return;
+	
+	if( g_EMEntity.hTimer[TIMER_VEHICLE] == null && g_EMEntity.iDamageType != DAMAGE_VEHICLE )
+	{
+		g_EMEntity.hTimer[TIMER_VEHICLE] = CreateTimer( g_fCvar_VehiclsCountdown, Timer_CountdownFinale, _, TIMER_FLAG_NO_MAPCHANGE );
+		if( g_bCvar_LeaveSpawnMsg )
+		{
+			for( int i = 1; i <= MaxClients; i ++ )
+			{
+				if( Survivor_InGame( i ) && !IsFakeClient( i ))
+				{
+					PrintToChat( i, "\x05[\x04WARNING\x05]: \x01You have \x04%0.0f sec(s) \x01to enter Finale Vehicle!!", g_fCvar_VehiclsCountdown );
+				}
+			}
+		}
+		Print_ServerText( "Timer Finale Vehicle Damage has started", g_bCvar_IsDebugging );
 	}
 }
 
@@ -1229,7 +1433,6 @@ void Create_MapTouchTrigger( int client )
 	// dont create ref area twice
 	if( g_EMEntity.bIsFindDoorInit ) return;
 	
-	g_EMEntity.bIsRound_End		= false;
 	g_EMEntity.bIsFindDoorInit	= true;
 	
 	
@@ -1247,13 +1450,13 @@ void Create_MapTouchTrigger( int client )
 	{
 		GetEntPropVector( entity, Prop_Send, "m_vecOrigin", doorPos );
 		float distance = GetVectorDistance( playPos, doorPos );
-		if ( distance <= DIST_RADIUS )
+		if ( distance <= DIST_DOOR )
 		{
 			// register spawn area saferoom door
 			if( g_EMEntity.iDoor_Spawn == -1 )
 			{
 				GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
-				if( ChrCmp( m_ModelName, MDL_SPAWNROOM1 ) || ChrCmp( m_ModelName, MDL_SPAWNROOM2 ))
+				if( StrEqual( m_ModelName, MDL_SPAWNROOM1, false ) || StrEqual( m_ModelName, MDL_SPAWNROOM2, false ))
 				{
 					g_EMEntity.iDoor_Spawn = entity;
 					Print_ServerText( "Spawn Door found", g_bCvar_IsDebugging );
@@ -1271,7 +1474,7 @@ void Create_MapTouchTrigger( int client )
 			if( g_EMEntity.iDoor_Rescue == -1 )
 			{
 				GetEntPropString( entity, Prop_Data, "m_ModelName", m_ModelName, sizeof(m_ModelName));
-				if( ChrCmp( m_ModelName, MDL_CHECKROOM1 ) || ChrCmp( m_ModelName, MDL_CHECKROOM2 ))
+				if( StrEqual( m_ModelName, MDL_CHECKROOM1, false ) || StrEqual( m_ModelName, MDL_CHECKROOM2, false ))
 				{
 					g_EMEntity.iDoor_Rescue = entity;
 					Print_ServerText( "Checkpoint Door found", g_bCvar_IsDebugging );
@@ -1295,7 +1498,7 @@ void Create_MapTouchTrigger( int client )
 		
 		// spawn door offset setting
 		int type;
-		if( ChrCmp( m_ModelName, MDL_SPAWNROOM1 ))
+		if( StrEqual( m_ModelName, MDL_SPAWNROOM1, false ))
 		{
 			type = 1;
 		}
@@ -1318,7 +1521,7 @@ void Create_MapTouchTrigger( int client )
 		}
 		
 		// create toy referance
-		int rand = GetRandomInt( 0, 2 );
+		int rand = GetRandomInt( 0, ( sizeof(g_sDummyModel) - 2 ));
 		g_EMEntity.iRefs_Spawn = Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Spawn, ang, g_iCvar_ToyAlpha, g_bCvar_IsDebugging );
 	}
 	
@@ -1348,25 +1551,24 @@ void Create_MapTouchTrigger( int client )
 		g_EMEntity.fPos_Rescue[1] += DIST_REFERENCE * Sine( DegToRad( ang[1] ));
 		
 		// create toy referance
-		int rand = GetRandomInt( 0, 2 );
+		int rand = GetRandomInt( 0, ( sizeof(g_sDummyModel) - 2 ));
 		g_EMEntity.iRefs_Rescue = Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Rescue, ang, g_iCvar_ToyAlpha, g_bCvar_IsDebugging );
 	}
-	
 	
 	/////////////////////////////////////////////////
 	//========= create spawn touch trigger ========//
 	/////////////////////////////////////////////////
-	if( !g_EMEntity.bIsCfgLoaded )
+	if( !g_EMEntity.bIsSpawnLoaded )
 	{
 		// current map name not in trigger touch list
 		Print_ServerText( "Current map not in the trigger config list!!", g_bCvar_IsDebugging );
 		return;
 	}
 
-	int sensor = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR1], g_EMEntity.fBoxPos, g_EMEntity.fBoxMin , g_EMEntity.fBoxMax );
+	int sensor = Create_TouchTrigger( g_sDummyModel[MDL_SENSOR], g_EMEntity.fBoxPos, g_EMEntity.fBoxMin , g_EMEntity.fBoxMax );
 	if( sensor != -1 )
 	{
-		g_EMEntity.iEntTrigger = sensor;
+		g_EMEntity.iSpawnTrigger = sensor;
 		
 		// first map of the campaign, mean no spawn door referance.
 		if( g_EMEntity.iDoor_Spawn == -1 )
@@ -1374,7 +1576,7 @@ void Create_MapTouchTrigger( int client )
 			// create toy referance based on trigger touch position
 			g_EMEntity.fPos_Spawn = view_as<float>( g_EMEntity.fBoxPos );
 			
-			int rand = GetRandomInt( 0, 2 );
+			int rand = GetRandomInt( 0, ( sizeof(g_sDummyModel) - 2 ));
 			g_EMEntity.iRefs_Spawn = Create_Reference( g_sDummyModel[rand], g_EMEntity.fBoxPos, g_EMEntity.fBoxAng, g_iCvar_ToyAlpha, g_bCvar_IsDebugging );
 		}
 		
@@ -1416,9 +1618,6 @@ int Create_TouchTrigger( const char[] model, float pos[3], float m_vecMins[3], f
 	SetEntProp( sensor, Prop_Send, "m_nSolidType", 2 );
 	SetEntPropVector( sensor, Prop_Send, "m_vecMins", m_vecMins );
 	SetEntPropVector( sensor, Prop_Send, "m_vecMaxs", m_vecMaxs );
-	
-	SDKHook( sensor, SDKHook_StartTouch, SpawnArea_OnStartTouched );
-	SDKHook( sensor, SDKHook_EndTouch, SpawnArea_OnEndTouch );
 	return sensor;
 }
 
@@ -1537,13 +1736,21 @@ void StopBurningSound( int client )
 
 void Print_RespawnMessage( int client )
 {
-	if( g_EMEntity.hTimer[TIMER_RESCUE] != null && !g_EMEntity.bIsDamage_Rescue )
+	if( g_EMEntity.hTimer[TIMER_VEHICLE] != null && g_EMEntity.iDamageType != DAMAGE_VEHICLE )
 	{
-		PrintToChat( client, "\x05[\x04WARNING\x05]: \x01Rescue Saferoom timer has started!!" );
+		PrintToChat( client, "\x05[\x04WARNING\x05]: \x01Finale timer has started!!" );
 	}
-	else if( g_EMEntity.bIsDamage_Rescue )
+	else if( g_EMEntity.iDamageType == DAMAGE_VEHICLE )
 	{
-		PrintToChat( client, "\x05[\x04WARNING\x05]: \x01Rescue Saferoom Hazard has started!!" );
+		PrintToChat( client, "\x05[\x04WARNING\x05]: \x01Finale Hazard has started!!" );
+	}
+	else if( g_EMEntity.hTimer[TIMER_CHECKPOINT] != null && g_EMEntity.iDamageType != DAMAGE_CHECKPOINT )
+	{
+		PrintToChat( client, "\x05[\x04WARNING\x05]: \x01Checkpoint Saferoom timer has started!!" );
+	}
+	else if( g_EMEntity.iDamageType == DAMAGE_CHECKPOINT )
+	{
+		PrintToChat( client, "\x05[\x04WARNING\x05]: \x01Checkpoint Saferoom Hazard has started!!" );
 	}
 	else if( g_CMClient[client].iSpawnCount <= 0 )
 	{
@@ -1606,11 +1813,6 @@ void Get_EntityLocation( int entity, float pos[3], float ang[3] )
 	GetEntPropVector( entity, Prop_Data, "m_angRotation", ang );
 }
 
-bool ChrCmp( const char[] str1, const char[] str2 )
-{
-	return ( strcmp( str1, str2, false ) == 0 );
-}
-
 void Print_ServerText( const char[] text, bool print )
 {
 	if( !print ) return;
@@ -1662,6 +1864,13 @@ void ConvertStringToFloat( const char[][] source, int source_size, float[] buff 
 	}
 }
 
+void CopyVector( float input[3], float output[3] )
+{
+	output[0] = input[0];
+	output[1] = input[1];
+	output[2] = input[2];
+}
+
 bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, float pos[3], float ang[3], float min[3], float max[3] )
 {
 	char filepath[PLATFORM_MAX_PATH];
@@ -1671,13 +1880,13 @@ bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, 
 	KeyValues kv = new KeyValues( filename );
 	if( !kv.ImportFromFile( filepath ))
 	{
-		Print_ServerText( "Spawn file import failed", true );
+		Print_ServerText( "File import failed | Spawn-Save", true );
 		delete kv;
 		return false;
 	}
 	if( !kv.JumpToKey( mapname, true ))
 	{
-		Print_ServerText( "Spawn read config failed.", true );
+		Print_ServerText( "Config read failed | Spawn-Save", g_bCvar_IsDebugging );
 		delete kv;
 		return false;
 	}
@@ -1699,7 +1908,7 @@ bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, 
 	
 	if( client > 0 )
 	{
-		Format( buff, sizeof( buff ), "[SAFEROOM]: Map Config Saved: %s", mapname );
+		Format( buff, sizeof( buff ), "[SAFEROOM]: Spawn Map Config Saved: %s", mapname );
 		PrintToChat( client, buff );
 	}
 	return true;
@@ -1712,14 +1921,14 @@ bool ReadConfig_Spawn( const char[] filename, const char[] mapname, char[][] buf
 	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
 	if( !kv.ImportFromFile( filepath ))
 	{
-		Print_ServerText( "Spawn file import failed", true );
+		Print_ServerText( "File import failed | Spawn-Read", true );
 		delete kv;
 		return false;
 	}
 
 	if( !kv.JumpToKey( mapname ))
 	{
-		Print_ServerText( "Spawn read config failed.", true );
+		Print_ServerText( "Config read failed | Spawn-Read", g_bCvar_IsDebugging );
 		delete kv;
 		return false;
 	}
@@ -1731,7 +1940,7 @@ bool ReadConfig_Spawn( const char[] filename, const char[] mapname, char[][] buf
 	kv.Rewind();
 	kv.ExportToFile( filepath );
 	delete kv;
-	Print_ServerText( "Spawn box loaded succsesfully.", g_bCvar_IsDebugging );
+	Print_ServerText( "Config loaded | Spawn-Read", g_bCvar_IsDebugging );
 	return true;
 }
 
@@ -1742,13 +1951,14 @@ bool ReadConfig_Cpdoor( const char[] filename, const char[] mapname, char[] buff
 	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
 	if( !kv.ImportFromFile( filepath ))
 	{
-		Print_ServerText( "File import failed | Spawn", true );
+		Print_ServerText( "File import failed | CPDoor-Read", true );
 		delete kv;
 		return false;
 	}
 
 	if( !kv.JumpToKey( mapname ))
 	{
+		Print_ServerText( "Config read failed | CPDoor-Read", g_bCvar_IsDebugging );
 		delete kv;
 		return false;
 	}
@@ -1757,7 +1967,82 @@ bool ReadConfig_Cpdoor( const char[] filename, const char[] mapname, char[] buff
 	kv.Rewind();
 	kv.ExportToFile( filepath );
 	delete kv;
-	Print_ServerText( "CPDoor loaded succsesfully.", g_bCvar_IsDebugging );
+	Print_ServerText( "Config loaded | CPDoor-Read", g_bCvar_IsDebugging );
+	return true;
+}
+
+bool SaveConfig_Finale( int client, const char[] filename, const char[] mapname, int location )
+{
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	
+	char buff[64];
+	KeyValues kv = new KeyValues( filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		Print_ServerText( "File import failed | Finale-Save", true );
+		delete kv;
+		return false;
+	}
+	if( !kv.JumpToKey( mapname, true ))
+	{
+		Print_ServerText( "Config read failed | Finale-Save", g_bCvar_IsDebugging );
+		delete kv;
+		return false;
+	}
+	
+	float pos[3];
+	GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
+	Format( buff, sizeof( buff ), "%.2f, %.2f, %.2f", pos[0], pos[1], pos[2] );
+	if( location == 1 )
+	{
+		kv.SetString( "vehicle1", buff );
+		if( client > 0 )
+		{
+			Format( buff, sizeof( buff ), "[SAFEROOM]: Finale Map Config vehicle pos 1 Saved: %s", mapname );
+			PrintToChat( client, buff );
+		}
+	}
+	else
+	{
+		kv.SetString( "vehicle2", buff );
+		if( client > 0 )
+		{
+			Format( buff, sizeof( buff ), "[SAFEROOM]: Finale Map Config vehicle pos 2 Saved: %s", mapname );
+			PrintToChat( client, buff );
+		}
+	}
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	return true;
+}
+
+bool ReadConfig_Finale( const char[] filename, const char[] mapname, char[][] buffer )
+{
+	KeyValues kv = new KeyValues( filename );
+	char filepath[PLATFORM_MAX_PATH];
+	BuildPath( Path_SM, filepath, sizeof( filepath ), "data/%s.cfg", filename );
+	if( !kv.ImportFromFile( filepath ))
+	{
+		Print_ServerText( "File import failed | Finale-Read", true );
+		delete kv;
+		return false;
+	}
+
+	if( !kv.JumpToKey( mapname ))
+	{
+		Print_ServerText( "Config read failed | Finale-Read", g_bCvar_IsDebugging );
+		delete kv;
+		return false;
+	}
+	
+	kv.GetString( "vehicle1", buffer[0], 32 );
+	kv.GetString( "vehicle2", buffer[1], 32 );
+	kv.Rewind();
+	kv.ExportToFile( filepath );
+	delete kv;
+	Print_ServerText( "Config loaded | Finale-Read", g_bCvar_IsDebugging );
 	return true;
 }
 
