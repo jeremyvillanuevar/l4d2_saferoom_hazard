@@ -4,13 +4,15 @@
 #define TEAM_SURVIVOR		2
 #define TEAM_INFECTED		3
 
-#define DIST_RADIUS			1000.0
+#define DIST_DOOR			1000.0
+#define DIST_FINALE			300.0
 #define DIST_SENSOR			20.0
 #define DIST_REFERENCE		80.0
 #define DIST_DUMMYHEIGHT	-53.0
 
 #define FILE_SPAWN			"saferoom_boxspawn"
 #define FILE_CPDOOR			"saferoom_cpdoor"
+#define FILE_FINALE			"saferoom_finale"
 
 #define SND_TELEPORT		"ui/menu_horror01.wav"
 #define SND_BURNING			"ambient/fire/fire_small_loop2.wav"
@@ -27,6 +29,10 @@
 #define MAT_HALO			"materials/sprites/halo01.vmt"
 #define MAT_BLOOD			"materials/sprites/bloodspray.vmt"
 
+
+int g_iColor_Green[]	= { 000, 255, 000, 20 };
+int g_iColor_Red[]		= { 255, 000, 000, 20 };
+int g_iColor_Purple[]	= { 128, 000, 128, 20 };
 
 ////////////////////////////////////////////////
 ////// Developer Touch Area Constructor ////////
@@ -67,7 +73,8 @@ enum //=== Map Vector Config ==========//
 enum //=== Global Timer ==============//
 {
 	TIMER_GLOBAL,
-	TIMER_RESCUE,
+	TIMER_VEHICLE,
+	TIMER_CHECKPOINT,
 	TIMER_LASER1,
 	TIMER_LASER2,
 	TIMER_LENGTH
@@ -78,7 +85,16 @@ enum //=== Client Room State =========//
 	ROOM_STATE_OUTDOOR,
 	ROOM_STATE_SPAWN,
 	ROOM_STATE_RESCUE,
+	ROOM_STATE_VEHICLE,
 	ROOM_STATE_LEN
+}
+
+enum DmgType //=== Client Room State =========//
+{
+	DAMAGE_NONE,
+	DAMAGE_SPAWN,
+	DAMAGE_CHECKPOINT,
+	DAMAGE_VEHICLE,
 }
 
 enum //=== Dummy Model ================//
@@ -86,7 +102,10 @@ enum //=== Dummy Model ================//
 	MDL_REFERANCE1,
 	MDL_REFERANCE2,
 	MDL_REFERANCE3,
-	MDL_SENSOR1,
+	MDL_REFERANCE4,
+	MDL_REFERANCE5,
+	MDL_REFERANCE6,
+	MDL_SENSOR,
 	MDL_LENGTH
 }
 char g_sDummyModel[MDL_LENGTH][] =
@@ -94,6 +113,9 @@ char g_sDummyModel[MDL_LENGTH][] =
 	"models/props_fairgrounds/elephant.mdl",
 	"models/props_fairgrounds/alligator.mdl",
 	"models/props_fairgrounds/giraffe.mdl",
+	"models/props_fairgrounds/mr_mustachio.mdl",
+	"models/props_collectables/mushrooms.mdl",
+	"models/items/l4d_gift.mdl",
 	"models/editor/overlay_helper.mdl",
 };
 
@@ -118,24 +140,29 @@ ClientManager g_CMClient[MAXPLAYERS+1];
 
 enum struct EntityManager
 {
+	DmgType	iDamageType;
+	
 	float	fPos_Spawn[3];
 	float	fPos_Rescue[3];
+	float	fPos_Vehicle1[3];
+	float	fPos_Vehicle2[3];
 	float	fBoxPos[3];
 	float	fBoxAng[3];
 	float	fBoxMin[3];
 	float	fBoxMax[3];
 	float	fCPRotate;
-	bool	bIsCfgLoaded;
+	bool	bIsSpawnLoaded;
+	bool	bIsFinaleLoaded;
 	int		iDoor_Spawn;
 	int		iDoor_Rescue;
 	int		iRefs_Spawn;
 	int		iRefs_Rescue;
-	int		iEntTrigger;
+	int		iSpawnTrigger;
 	int		iIndexModel;
 	bool	bIsRound_Finale;
-	bool	bIsRound_End;
-	bool	bIsDamage_Rescue;
 	bool	bIsFindDoorInit;
+	bool	bIsVehiclReady;
+	bool	bIsRoundStop;
 	
 	Handle	hTimer[TIMER_LENGTH];
 	char	sCurrentMap[PLATFORM_MAX_PATH];
@@ -149,18 +176,16 @@ enum struct EntityManager
 		this.iDoor_Rescue 		= -1;
 		this.iRefs_Spawn 		= -1;
 		this.iRefs_Rescue 		= -1;
-		this.iEntTrigger 		= -1;
+		this.iSpawnTrigger 		= -1;
 		this.iIndexModel 		= -1;
+		this.iDamageType 		= DAMAGE_NONE;
 		
 		this.bIsRound_Finale 	= false;
-		this.bIsRound_End 		= true;
-		this.bIsDamage_Rescue	= false;
 		this.bIsFindDoorInit	= false;
+		this.bIsVehiclReady		= false;
+		this.bIsRoundStop		= false;
 		
-		for( int i = 0; i < TIMER_LENGTH; i++ )
-		{
-			this.hTimer[i] = null;
-		}
+		this.TimerKill();
 	}
 	
 	void TimerKill()
