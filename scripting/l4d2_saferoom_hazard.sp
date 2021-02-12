@@ -75,7 +75,6 @@ bool	g_bCvar_DamageSpawn;
 bool	g_bCvar_DamageCheckpoint;
 bool	g_bCvar_DamageFinale;
 int		g_iCvar_BloodColor[4];
-bool	g_bCvar_IsDebugging;
 
 
 //========= Plugin Start ========//
@@ -119,11 +118,9 @@ public void OnPluginStart()
 	
 	HookEvent( "survivor_rescued",			EVENT_PlayerRescued );
 	HookEvent( "player_spawn",				EVENT_PlayerSpawn );
-	HookEvent( "player_first_spawn",		EVENT_PlayerSpawn );
-	HookEvent( "round_end",					EVENT_RoundWinLost );
-	HookEvent( "mission_lost",				EVENT_RoundWinLost );
-	HookEvent( "finale_vehicle_leaving",	EVENT_RoundWinLost );
-	HookEvent( "finale_win",				EVENT_RoundWinLost );
+	HookEvent( "round_end",					EVENT_RoundStartWinLost );
+	HookEvent( "finale_vehicle_leaving",	EVENT_RoundStartWinLost );
+	HookEvent( "finale_win",				EVENT_RoundStartWinLost );
 	HookEvent( "finale_start",				EVENT_Finale );
 	HookEvent( "door_close",				EVENT_DoorClose );
 	HookEvent( "player_death",				EVENT_PlayerDeath );
@@ -135,7 +132,6 @@ public void OnPluginStart()
 	HookEvent( "defibrillator_used",		EVENT_Defibrillator );
 	HookEvent( "finale_escape_start",		EVENT_FinaleStartWin );
 	HookEvent( "finale_vehicle_ready",		EVENT_FinaleStartWin );
-	
 
 	//================= Admin and developer command =================//
 	RegAdminCmd( "srh_enter",		Command_ForceEnter_CheckpointRoom,		ADMFLAG_GENERIC, "Admin jump command. Force everyone into checkpoint saferoom." );
@@ -732,20 +728,15 @@ public Action Command_DeveloperBoundingBox_Save( int client, int args )
 	return Plugin_Handled;
 }
 
-public void EVENT_RoundWinLost( Event event, const char[] name, bool dontBroadcast )
+public void EVENT_RoundStartWinLost( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
 	g_EMEntity.Reset();
-	g_EMEntity.bIsRoundStop = true;
-		
+	
 	if( StrEqual( name, "round_end", false ))
 	{
-		Print_ServerText( "Round End!!", g_bCvar_IsDebugging );
-	}
-	else if( StrEqual( name, "mission_lost", false ))
-	{
-		Print_ServerText( "Finale Lost", g_bCvar_IsDebugging );
+		Print_ServerText( "Round End", g_bCvar_IsDebugging );
 	}
 	else if( StrEqual( name, "finale_win", false ))
 	{
@@ -897,7 +888,7 @@ public void EVENT_Defibrillator( Event event, const char[] name, bool dontBroadc
 	}
 }
 
-public void EVENT_FinaleStartWin( Event event, const char[] name, bool dontBroadcast ) // finale damage under development
+public void EVENT_FinaleStartWin( Event event, const char[] name, bool dontBroadcast )
 {
 	if ( !g_bCvar_PluginEnable ) return;
 	
@@ -924,6 +915,11 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 	int client = GetClientOfUserId( userid );
 	if ( client > 0 && client <= MaxClients && IsClientInGame( client ))
 	{
+		if( g_bCvar_IsDebugging && !IsFakeClient( client ))
+		{
+			Print_ServerText( "player_spawn", g_bCvar_IsDebugging );
+		}
+		
 		switch( GetClientTeam( client ))
 		{
 			case TEAM_SURVIVOR:
@@ -940,7 +936,7 @@ public void EVENT_PlayerSpawn( Event event, const char[] name, bool dontBroadcas
 			{
 				if( g_bCvar_IsDebugging && !g_bCvar_EnableEnemy )
 				{
-					CreateTimer( 0.1, Timer_KillIInfectedTank, userid, TIMER_FLAG_NO_MAPCHANGE );
+					CreateTimer( 0.1, Timer_KillIInfectedTank, userid, TIMER_FLAG_NO_MAPCHANGE ); 
 				}
 			}
 		}
@@ -1004,6 +1000,11 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 	//if( g_EMEntity.bIsSpawnLoaded && GetEntityMoveType( client ) != MOVETYPE_LADDER && GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_DOOR )
 	if( g_EMEntity.bIsSpawnLoaded && caller == g_EMEntity.iSpawnTrigger )
 	{
+		if( g_bCvar_IsDebugging && !IsFakeClient( client ))
+		{
+			PrintToServer( "===== %N Start Touch =====", client );
+		}
+
 		// set client no longer joined in midgame and damage applied
 		SetClientJoinStatus( client );
 		
@@ -1035,6 +1036,11 @@ public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, i
 	//if( g_EMEntity.bIsSpawnLoaded && GetEntityMoveType( client ) != MOVETYPE_LADDER && GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_DOOR )
 	if( g_EMEntity.bIsSpawnLoaded && caller == g_EMEntity.iSpawnTrigger )
 	{
+		if( g_bCvar_IsDebugging && !IsFakeClient( client ))
+		{
+			PrintToServer( "===== %N End Touch =====", client );
+		}
+		
 		g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
 		
 		// set client no longer joined in midgame and damage applied
@@ -1129,14 +1135,7 @@ public Action Timer_GlobalDamage( Handle timer )
 		Print_ServerText( "Timer damage lost track/duplicate and terminated", true );
 		return Plugin_Stop;
 	}
-	
-	if( g_EMEntity.bIsRoundStop )
-	{
-		g_EMEntity.hTimer[TIMER_GLOBAL] = null;
-		Print_ServerText( "Timer Stopped", true );
-		return Plugin_Stop;
-	}
-	
+
 	bool isSpawn	= false;
 	bool isRescue	= false;
 	bool isVehicle	= false;
@@ -1813,49 +1812,6 @@ void Get_EntityLocation( int entity, float pos[3], float ang[3] )
 	GetEntPropVector( entity, Prop_Data, "m_angRotation", ang );
 }
 
-void Print_ServerText( const char[] text, bool print )
-{
-	if( !print ) return;
-	
-	char gauge_none[2]  = "";
-	char gauge_tags[16] = "[SAFEROOM]:";
-	char gauge_char[99] = "===========================================================================";
-	char gauge_side[64];
-	FormatEx( gauge_side, sizeof( gauge_side ), "" );
-	
-	int len_char = strlen( gauge_char );
-	int len_text = strlen( text );
-	int len_tags = strlen( gauge_tags );
-	int len_diff = len_char - len_text - len_tags - 2;
-	
-	for( int i = 0; i < len_diff; i++ )
-	{
-		gauge_side[i] = gauge_char[0];
-	}
-	
-	char gauge_buff[99];
-	Format( gauge_buff, sizeof( gauge_buff ), "== %s %s %s", gauge_tags, text, gauge_side );
-	
-	int len1 = strlen( gauge_buff );
-	if( len1 > len_char )
-	{
-		for( int i = len_char; i < sizeof( gauge_char ); i++ )
-		{
-			gauge_buff[i] = gauge_none[0];
-		}
-	}
-	
-	// ( "===========================================================================" );
-	// ( "== [SAFEROOM]: Timer damage terminated for finale =========================" );
-	// ( "===========================================================================" );
-	
-	PrintToServer( " " );
-	PrintToServer( "%s", gauge_char );
-	PrintToServer( "%s", gauge_buff );
-	PrintToServer( "%s", gauge_char );
-	PrintToServer( " " );
-}
-
 void ConvertStringToFloat( const char[][] source, int source_size, float[] buff )
 {
 	for( int i = 0; i < source_size; i++ )
@@ -2046,6 +2002,33 @@ bool ReadConfig_Finale( const char[] filename, const char[] mapname, char[][] bu
 	return true;
 }
 
+int FindRandomHumanPlayers()
+{
+	int count = -1;
+	int buff[MAXPLAYERS+1];
+	for( int i = 1; i <= MaxClients; i++ )
+	{
+		if( IsClientInGame( i ) && !IsFakeClient( i ) && GetClientTeam( i ) == 2 )
+		{
+			if( count == -1 )
+			{
+				count = 0;
+			}
+			buff[count] = i;
+			count++;
+		}
+	}
+	
+	// no human players
+	if( count == -1 )
+	{
+		return count;
+	}
+	
+	count -= 1;
+	return buff[ GetRandomInt( 0, count ) ];
+}
+
 stock bool DeleteConfig( int client, const char[] filename, const char[] mapname )
 {
 	KeyValues kv = new KeyValues( filename );
@@ -2123,33 +2106,6 @@ stock void ToggleGlowEnable( int entity, int color[3], bool enable )
 	SetEntProp( entity, Prop_Send, "m_iGlowType", m_glowtype );
 	SetEntProp( entity, Prop_Send, "m_nGlowRange", 0 );
 	SetEntProp( entity, Prop_Send, "m_glowColorOverride", m_glowcolor );
-}
-
-stock int FindRandomHumanPlayers()
-{
-	int count = -1;
-	int buff[MAXPLAYERS+1];
-	for( int i = 1; i <= MaxClients; i++ )
-	{
-		if( IsClientInGame( i ) && !IsFakeClient( i ) && GetClientTeam( i ) == 2 )
-		{
-			if( count == -1 )
-			{
-				count = 0;
-			}
-			buff[count] = i;
-			count++;
-		}
-	}
-	
-	// no human players
-	if( count == -1 )
-	{
-		return count;
-	}
-	
-	count -= 1;
-	return buff[ GetRandomInt( 0, count ) ];
 }
 
 // @silver [ANY] Trigger Multiple Commands
