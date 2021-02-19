@@ -7,6 +7,7 @@
 ============= version history =============
 v 1.1.1
 - added check to bypass timer trigger if cenimetic is still playing.
+- beamring animated in and outward.
 
 v 1.1.0
 - creadit:
@@ -52,7 +53,6 @@ ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConV
 		g_ConVarSafeHazard_BloodColor,		g_ConVarSafeHazard_IsDebugging,			g_ConVarSafeHazard_EnableEnemy, 		g_ConVarSafeHazard_BotTrigger,	g_ConVarSafeHazard_BeamRing,
 		g_ConVarSafeHazard_SpawnDamage,		g_ConVarSafeHazard_CheckpoinDamage,		g_ConVarSafeHazard_VehicleDamage;
 
-
 //========== Global Cvar ========//
 bool	g_bCvar_PluginEnable;
 int		g_iCvar_NotifySpawn1;
@@ -78,7 +78,7 @@ bool	g_bCvar_DamageSpawn;
 bool	g_bCvar_DamageCheckpoint;
 bool	g_bCvar_DamageFinale;
 int		g_iCvar_BloodColor[4];
-
+bool	g_bIsOutwardDir;
 
 //========= Plugin Start ========//
 public Plugin myinfo = 
@@ -1027,7 +1027,7 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 
 public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, int client, float time )
 {
-	if( !Survivor_IsValid( client )) return;
+	if( IsCenimatic() || !Survivor_IsValid( client )) return;
 	
 	float pos[3];
 	GetEntPropVector( client, Prop_Send, "m_vecOrigin", pos );
@@ -1044,10 +1044,7 @@ public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, i
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		
 		// first player enter/left spawn area and are not finale, start spawn area damage timer
-		if( !IsCenimatic())
-		{
-			CheckSpawnArea( client );
-		}
+		CheckSpawnArea( client );
 	}
 	else if( g_EMEntity.bIsFinaleLoaded && ( GetVectorDistance( pos, g_EMEntity.fPos_Vehicle1 ) < DIST_FINALE || GetVectorDistance( pos, g_EMEntity.fPos_Vehicle2 ) < DIST_FINALE ))
 	{
@@ -1295,8 +1292,16 @@ public Action Timer_GlobalDamage( Handle timer )
 		{
 			Create_BeamRingPoint( pos, g_iColor_Purple );
 		}
-		pos[2] += 7.0;
-		
+		pos[2] += 10.0;
+	}
+	
+	if( g_bIsOutwardDir ) 
+	{
+		g_bIsOutwardDir = false;
+	}
+	else
+	{
+		g_bIsOutwardDir = true;
 	}
 	return Plugin_Continue;
 }
@@ -1338,14 +1343,23 @@ public Action Timer_KillIInfectedTank( Handle timer, any userid )
 /////////////////////////////////////////////////////////////
 void Create_BeamRingPoint( float pos[3], int color[4] )
 {
-	//TE_SetupBeamRingPoint(const float center[3], float Start_Radius, float End_Radius, int ModelIndex, int HaloIndex, int StartFrame, int FrameRate, float Life, float Width, float Amplitude, const int Color[4], int Speed, int Flags)
-	TE_SetupBeamRingPoint( pos, 10.0, 400.0, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 1.0, 5.0, 0.0, color, 80, 0 );
+	if( g_bIsOutwardDir )
+	{
+		//TE_SetupBeamRingPoint(const float center[3], float Start_Radius, float End_Radius, int ModelIndex, int HaloIndex, int StartFrame, int FrameRate, float Life, float Width, float Amplitude, const int Color[4], int Speed, int Flags)
+		TE_SetupBeamRingPoint( pos, 50.0, 400.0, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 1.0, 5.0, 0.0, color, 150, 0 );
+	}
+	else
+	{
+		TE_SetupBeamRingPoint( pos, 400.0, 50.0, g_iMaterialLaser, g_iMaterialHalo, 0, 0, 1.0, 5.0, 0.0, color, 150, 0 );
+	}
 	TE_SendToAll();
 }
 
 void CheckSpawnArea( int client )
 {
-	if( client != g_iEntityTest && g_EMEntity.hTimer[TIMER_GLOBAL] == null && !g_EMEntity.bIsRound_Finale )
+	if( client == g_iEntityTest ) return;
+	
+	if( g_EMEntity.hTimer[TIMER_GLOBAL] == null && !g_EMEntity.bIsRound_Finale )
 	{
 		g_EMEntity.iDamageType = DAMAGE_SPAWN;
 		g_EMEntity.hTimer[TIMER_GLOBAL] = CreateTimer( 1.0, Timer_GlobalDamage, _, TIMER_REPEAT );
