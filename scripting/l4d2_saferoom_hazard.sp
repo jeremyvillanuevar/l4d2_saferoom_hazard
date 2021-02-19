@@ -5,6 +5,9 @@
 
 
 ============= version history =============
+v 1.1.1
+- added check to bypass timer trigger if cenimetic is still playing.
+
 v 1.1.0
 - creadit:
 	@GL_INS beta tester
@@ -1000,11 +1003,6 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 	//if( g_EMEntity.bIsSpawnLoaded && GetEntityMoveType( client ) != MOVETYPE_LADDER && GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_DOOR )
 	if( g_EMEntity.bIsSpawnLoaded && caller == g_EMEntity.iSpawnTrigger )
 	{
-		if( g_bCvar_IsDebugging && !IsFakeClient( client ))
-		{
-			PrintToServer( "===== %N Start Touch =====", client );
-		}
-
 		// set client no longer joined in midgame and damage applied
 		SetClientJoinStatus( client );
 		
@@ -1036,11 +1034,6 @@ public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, i
 	//if( g_EMEntity.bIsSpawnLoaded && GetEntityMoveType( client ) != MOVETYPE_LADDER && GetVectorDistance( pos, g_EMEntity.fPos_Spawn ) < DIST_DOOR )
 	if( g_EMEntity.bIsSpawnLoaded && caller == g_EMEntity.iSpawnTrigger )
 	{
-		if( g_bCvar_IsDebugging && !IsFakeClient( client ))
-		{
-			PrintToServer( "===== %N End Touch =====", client );
-		}
-		
 		g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
 		
 		// set client no longer joined in midgame and damage applied
@@ -1051,7 +1044,10 @@ public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, i
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		
 		// first player enter/left spawn area and are not finale, start spawn area damage timer
-		CheckSpawnArea( client );
+		if( !IsCenimatic())
+		{
+			CheckSpawnArea( client );
+		}
 	}
 	else if( g_EMEntity.bIsFinaleLoaded && ( GetVectorDistance( pos, g_EMEntity.fPos_Vehicle1 ) < DIST_FINALE || GetVectorDistance( pos, g_EMEntity.fPos_Vehicle2 ) < DIST_FINALE ))
 	{
@@ -1433,7 +1429,6 @@ void Create_MapTouchTrigger( int client )
 	if( g_EMEntity.bIsFindDoorInit ) return;
 	
 	g_EMEntity.bIsFindDoorInit	= true;
-	
 	
 	/////////////////////////////////////////////////
 	//====== find and register saferoom door =======//
@@ -1827,6 +1822,11 @@ void CopyVector( float input[3], float output[3] )
 	output[2] = input[2];
 }
 
+bool IsCenimatic()
+{
+	return ( GameRules_GetProp( "m_bInIntro", 1 ) == 1 );
+}
+
 bool SaveConfig_Spawn( int client, const char[] filename, const char[] mapname, float pos[3], float ang[3], float min[3], float max[3] )
 {
 	char filepath[PLATFORM_MAX_PATH];
@@ -2063,10 +2063,10 @@ stock bool DeleteConfig( int client, const char[] filename, const char[] mapname
 
 
 //============= Unused Stock for Development =================//
-stock int GetHumanSpectator( int bot )
+stock int GetHumanSpectator( int subject )
 {
-	// return human ID of idle bot, -1 if found none.
-	int userid = GetEntProp( bot, Prop_Send, "m_humanSpectatorUserID" );
+	// return human ID of idle subject, -1 if found none.
+	int userid = GetEntProp( subject, Prop_Send, "m_humanSpectatorUserID" );
 	int client = GetClientOfUserId( userid );
 	if ( client > 0 && client <= MaxClients && IsClientInGame( client ) && !IsFakeClient( client ))
 	{
