@@ -44,7 +44,7 @@ v 1.0.1
 #include <sourcemod>
 #include <sdktools>
 #include <sdkhooks>
-#include <saferoom_config.sp>
+#include "saferoom/saferoom_config.sp"
 
 //======== Global ConVar ========//
 ConVar	g_ConVarSafeHazard_PluginEnable,	g_ConVarSafeHazard_NotifySpawn1,		g_ConVarSafeHazard_NotifySpawn2,		g_ConVarSafeHazard_Radius,		g_ConVarSafeHazard_DamageAlive,
