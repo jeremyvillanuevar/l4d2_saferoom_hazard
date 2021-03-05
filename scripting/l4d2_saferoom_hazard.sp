@@ -106,7 +106,7 @@ public void OnPluginStart()
 	g_ConVarSafeHazard_ReferanceToy			= CreateConVar( "l4d2_hazard_saferoom_toy",			"1",	"0:Off, 1:On, If on, developer teleport reference visible inside safe room.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_CheckpoinCountdown	= CreateConVar( "l4d2_hazard_alert_checkpoint",		"30",	"If player refuse to enter second area, do damage after this long(seconds).", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 60.0 );
 	g_ConVarSafeHazard_VehicleCountdown		= CreateConVar( "l4d2_hazard_alert_vehicle",		"30",	"If player refuse to enter rescue vehicle, do damage after this long(seconds).", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 60.0 );
-	g_ConVarSafeHazard_ExitMsg				= CreateConVar( "l4d2_hazard_exit_message",			"1",	"0:Off, 1:On, Display hint text everytime player enter/exit.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
+	g_ConVarSafeHazard_ExitMsg				= CreateConVar( "l4d2_hazard_exit_message",			"1",	"0:Off, 1:On, Display hint text everytime player enter/exit the rescue zone.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_IsDamageBot			= CreateConVar( "l4d2_hazard_damage_bot",			"0",	"0:Off, 1:On, Apply damage to survivor bot.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
 	g_ConVarSafeHazard_BloodColor			= CreateConVar( "l4d2_hazard_blood_color",			"0,255,0",	"Damage blood color RGB separated by commas", FCVAR_SPONLY|FCVAR_NOTIFY );
 	g_ConVarSafeHazard_IsDebugging			= CreateConVar( "l4d2_hazard_debugging_enable",		"0",	"0:Off, 1:On, Toggle debugging on/off.", FCVAR_SPONLY|FCVAR_NOTIFY, true, 0.0, true, 1.0 );
@@ -772,7 +772,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			float total, count;
 			for( int i = 1; i <= MaxClients; i++ )
 			{
-				if( Survivor_InGame( i ) && !IsFakeClient( i ))
+				if( Survivor_InGame( i ) )//&& !IsFakeClient( i ))
 				{
 					total += 1.0;
 				}
@@ -780,7 +780,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			
 			for( int i = 1; i <= MaxClients; i++ )
 			{
-				if( Survivor_InGame( i ) && !IsFakeClient( i ) && g_CMClient[i].iStateRoom == ROOM_STATE_RESCUE )
+				if( Survivor_InGame( i ) && g_CMClient[i].iStateRoom == ROOM_STATE_RESCUE )//&& !IsFakeClient( i ) 
 				{
 					count += 1.0;
 				}
@@ -897,14 +897,14 @@ public void EVENT_FinaleStartWin( Event event, const char[] name, bool dontBroad
 	
 	if( StrEqual( name, "finale_escape_start", false ))
 	{
-		if( g_bCvar_NotifyExit ) PrintHintTextToAll( "*** Finale Escape Has Started ***" );
+		if( g_bCvar_NotifyExit ) PrintHintTextToAll( "*** Comienza Rescate - Procura que lleguen todos! ***" );
 		
 		Print_ServerText( "finale_escape_start", g_bCvar_IsDebugging );
 	}
 	else if( StrEqual( name, "finale_vehicle_ready", false ))
 	{
 		g_EMEntity.bIsVehiclReady = true;
-		if( g_bCvar_NotifyExit ) PrintHintTextToAll( "*** Finale Vehicle Is Ready ***" );
+		if( g_bCvar_NotifyExit ) PrintHintTextToAll( "*** Llega el vehículo - Procura que lleguen todos! ***" );
 		
 		Print_ServerText( "finale_vehicle_ready", g_bCvar_IsDebugging );
 	}
@@ -964,7 +964,8 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 		StopBurningSound( client );
 		g_CMClient[client].iStateRoom = ROOM_STATE_RESCUE;
 		
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Checkpoint Area", client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate", client );
+		if( g_bCvar_NotifyExit ) PrintToChatAll( "*** Necesitan entrar al refugio 75% de supervivientes, cierra la puerta para tpearlos y rescatarnos! ***" );
 		
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		CheckCheckpointArea();
@@ -983,7 +984,7 @@ public void EntityOutput_RescueArea_OnEndTouch( const char[] output, int caller,
 		SetClientJoinStatus( client );
 		
 		g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Exiting Checkpoint Area", client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas saliendo de la zona de rescate.", client );
 		
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		CheckCheckpointArea();
@@ -1015,12 +1016,56 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 		{
 			StopBurningSound( client );
 			g_CMClient[client].iStateRoom = ROOM_STATE_VEHICLE;
-			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Finale Area", client );
+			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate final ", client );
+			if( g_bCvar_NotifyExit ) PrintToChatAll( "*** Necesitan todos estar en pie y entrar al rescate 75% de supervivientes, se tpearan y rescataran! ***" );
 			
 			if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 			
 			// first player enter/left rescue vehicle and are finale, start finale damage timer
 			CheckFinaleVehicle();
+			
+			float vPosT[3];
+			GetClientAbsOrigin(client, vPosT);
+			// check all the clients to teleport
+			//if( !IsFakeClient( client ) && g_CMClient[client].iStateRoom == ROOM_STATE_VEHICLE )
+			//{
+				float total, count;
+				bool incapTemp=false;
+				for( int i = 1; i <= MaxClients; i++ )
+				{
+					if( Survivor_InGame( i ) )//&& !IsFakeClient( i ))
+					{
+						total += 1.0;
+					}
+					if( Survivor_IsHopeless( i )) incapTemp=true;
+				}
+				
+				if (!incapTemp)
+				{
+					for( int i = 1; i <= MaxClients; i++ )
+					{
+						if( Survivor_InGame( i ) && g_CMClient[i].iStateRoom == ROOM_STATE_VEHICLE )//&& !IsFakeClient( i ) 
+						{
+							count += 1.0;
+						}
+					}
+					
+					float perc = count / total * 100.0;
+					if( perc >= g_fCvar_DoorNumber )
+					{
+						for( int i = 1; i <= MaxClients; i++ )
+						{
+							if( Survivor_InGame( i ) && g_CMClient[i].iStateRoom != ROOM_STATE_RESCUE )
+							{
+								TeleportPlayer( i, vPosT, SND_TELEPORT );
+							}
+						}
+						
+						Print_ServerText( "Finale Rescue Triggered All players teleported", g_bCvar_IsDebugging );
+					}
+				}
+			//}
+			
 		}
 	}
 }
@@ -1051,7 +1096,7 @@ public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, i
 		if( g_EMEntity.bIsVehiclReady )
 		{
 			g_CMClient[client].iStateRoom = ROOM_STATE_OUTDOOR;
-			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Exiting Finale Area", client );
+			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas saliendo de la zona de rescate final ", client );
 			
 			if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 			
