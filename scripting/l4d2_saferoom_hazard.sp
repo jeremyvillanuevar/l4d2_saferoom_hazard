@@ -760,15 +760,17 @@ public void EVENT_Finale( Event event, const char[] name, bool dontBroadcast )
 
 public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast )
 {
-	if ( !g_bCvar_PluginEnable || g_bCvar_EventDoorWin || g_fCvar_DoorNumber == 0.0 ) return;
+	if ( !g_bCvar_PluginEnable || !g_bCvar_EventDoorWin || g_fCvar_DoorNumber == 0.0 ) return;
 	
 	bool close	= event.GetBool( "checkpoint" );
 	int	 client = GetClientOfUserId( event.GetInt( "userid" ));
 	if ( close && Survivor_IsValid( client ))
 	{
+		//PrintToChatAll("Valido Cliente");
 		// only human player closing area door from inside count
-		if( !IsFakeClient( client ) && g_CMClient[client].iStateRoom == ROOM_STATE_RESCUE )
+		if( g_CMClient[client].iStateRoom == ROOM_STATE_RESCUE )//!IsFakeClient( client ) && 
 		{
+			//PrintToChatAll("only human player closing area door from inside count");
 			float total, count;
 			for( int i = 1; i <= MaxClients; i++ )
 			{
@@ -787,6 +789,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			}
 			
 			float perc = count / total * 100.0;
+			//PrintToChatAll("perc %f",perc);
 			if( perc >= g_fCvar_DoorNumber )
 			{
 				for( int i = 1; i <= MaxClients; i++ )
@@ -968,6 +971,7 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 		if( g_bCvar_NotifyExit ) PrintToChatAll( "*** Necesitan entrar al refugio 75% de supervivientes, cierra la puerta para tpearlos y rescatarnos! ***" );
 		
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
+		
 		CheckCheckpointArea();
 	}
 }
@@ -1023,9 +1027,24 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 			
 			// first player enter/left rescue vehicle and are finale, start finale damage timer
 			CheckFinaleVehicle();
+				
+			int posVehiculo=0;
+			// create teleport position
 			
-			float vPosT[3];
-			GetClientAbsOrigin(client, vPosT);
+			if (GetVectorDistance( pos, g_EMEntity.fPos_Vehicle1 ) < DIST_FINALE )
+			{
+				posVehiculo=1;
+			}
+			if (GetVectorDistance( pos, g_EMEntity.fPos_Vehicle2 ) < DIST_FINALE )	
+			{
+				posVehiculo=2;
+			}	
+			
+			// create toy referance
+			//int rand = GetRandomInt( 0, ( sizeof(g_sDummyModel) - 2 ));
+			//g_EMEntity.iRefs_Rescue = Create_Reference( g_sDummyModel[rand], g_EMEntity.fPos_Rescue, ang, g_iCvar_ToyAlpha, g_bCvar_IsDebugging );
+		
+			
 			// check all the clients to teleport
 			//if( !IsFakeClient( client ) && g_CMClient[client].iStateRoom == ROOM_STATE_VEHICLE )
 			//{
@@ -1036,8 +1055,8 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 					if( Survivor_InGame( i ) )//&& !IsFakeClient( i ))
 					{
 						total += 1.0;
+						if( Survivor_IsHopeless( i )) incapTemp=true;
 					}
-					if( Survivor_IsHopeless( i )) incapTemp=true;
 				}
 				
 				if (!incapTemp)
@@ -1057,7 +1076,10 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 						{
 							if( Survivor_InGame( i ) && g_CMClient[i].iStateRoom != ROOM_STATE_RESCUE )
 							{
-								TeleportPlayer( i, vPosT, SND_TELEPORT );
+								if (posVehiculo==1)
+									TeleportPlayer( i, g_EMEntity.fPos_Vehicle1, SND_TELEPORT );
+								else
+									TeleportPlayer( i, g_EMEntity.fPos_Vehicle2, SND_TELEPORT );
 							}
 						}
 						
@@ -1415,6 +1437,7 @@ void CheckSpawnArea( int client )
 
 void CheckCheckpointArea()
 {
+
 	if( !g_bCvar_DamageCheckpoint ) return;
 	
 	if( g_EMEntity.iDamageType != DAMAGE_CHECKPOINT && g_EMEntity.hTimer[TIMER_CHECKPOINT] == null )
@@ -1450,6 +1473,7 @@ void CheckCheckpointArea()
 			Print_ServerText( "Timer Rescue Damage has started", g_bCvar_IsDebugging );
 		}
 	}
+
 }
 
 void CheckFinaleVehicle()
