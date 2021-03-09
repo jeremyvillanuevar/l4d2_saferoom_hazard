@@ -794,7 +794,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			{
 				for( int i = 1; i <= MaxClients; i++ )
 				{
-					if( Survivor_InGame( i ) && g_CMClient[i].iStateRoom != ROOM_STATE_RESCUE )
+					if( Survivor_InGame( i ) )//&& g_CMClient[i].iStateRoom != ROOM_STATE_RESCUE )
 					{
 						TeleportPlayer( i, g_EMEntity.fPos_Rescue, SND_TELEPORT );
 					}
