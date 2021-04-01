@@ -967,8 +967,8 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 		StopBurningSound( client );
 		g_CMClient[client].iStateRoom = ROOM_STATE_RESCUE;
 		
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate", client );
-		if( g_bCvar_NotifyExit ) PrintToChatAll( "*** Necesitan entrar al refugio 75% de supervivientes, cierra la puerta para tpearlos y rescatarnos! ***" );
+		//if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate", client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "*** Necesitan entrar al refugio 75% de supervivientes, cierra la puerta para tpearlos y rescatarnos! ***" );
 		
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		
@@ -1012,7 +1012,7 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 		SetClientJoinStatus( client );
 		
 		g_CMClient[client].iStateRoom = ROOM_STATE_SPAWN;
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entering Spawn Area", client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Entrando Area de Inicio", client );
 	}
 	else if( g_EMEntity.bIsFinaleLoaded && ( GetVectorDistance( pos, g_EMEntity.fPos_Vehicle1 ) < DIST_FINALE || GetVectorDistance( pos, g_EMEntity.fPos_Vehicle2 ) < DIST_FINALE ))
 	{
@@ -1020,8 +1020,8 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 		{
 			StopBurningSound( client );
 			g_CMClient[client].iStateRoom = ROOM_STATE_VEHICLE;
-			if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate final ", client );
-			if( g_bCvar_NotifyExit ) PrintToChatAll( "*** Necesitan todos estar en pie y entrar al rescate 75% de supervivientes, se tpearan y rescataran! ***" );
+			//if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate final ", client );
+			if( g_bCvar_NotifyExit ) PrintHintText(client,  "*** Necesitan todos estar en pie y entrar al rescate 75% de supervivientes, se tpearan y rescataran! ***" );
 			
 			if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 			
@@ -1055,10 +1055,10 @@ public void EntityOutput_Multiple_OnStartTouch( const char[] output, int caller,
 					if( Survivor_InGame( i ) )//&& !IsFakeClient( i ))
 					{
 						total += 1.0;
-						if( Survivor_IsHopeless( i )) incapTemp=true;
+						if(!IsFakeClient( i ) && Survivor_IsHopeless( i )) incapTemp=true;
 					}
 				}
-				
+				//If there is incap dont teleport, because incapped will not be rescued
 				if (!incapTemp)
 				{
 					for( int i = 1; i <= MaxClients; i++ )
@@ -1106,7 +1106,7 @@ public void EntityOutput_Multiple_OnEndTouch( const char[] output, int caller, i
 		// set client no longer joined in midgame and damage applied
 		SetClientJoinStatus( client );
 		StopBurningSound( client );
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Exiting Spawn Area", client );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "%N Saliendo del Area de Inicio", client );
 		
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		
