@@ -774,7 +774,7 @@ public void EVENT_DoorClose( Event event, const char[] name, bool dontBroadcast 
 			float total, count;
 			for( int i = 1; i <= MaxClients; i++ )
 			{
-				if( Survivor_InGame( i ) )//&& !IsFakeClient( i ))
+				if( Survivor_InGame( i ) && !IsFakeClient( i ))
 				{
 					total += 1.0;
 				}
@@ -968,7 +968,7 @@ public void EntityOutput_RescueArea_OnStartTouch( const char[] output, int calle
 		g_CMClient[client].iStateRoom = ROOM_STATE_RESCUE;
 		
 		//if( g_bCvar_NotifyExit ) PrintHintText( client, "%N estas entrando a la zona de rescate", client );
-		if( g_bCvar_NotifyExit ) PrintHintText( client, "*** Necesitan entrar al refugio 75% de supervivientes, cierra la puerta para tpearlos y rescatarnos! ***" );
+		if( g_bCvar_NotifyExit ) PrintHintText( client, "** Si 75 por ciento entran, cierra la puerta para tpearlos **" );
 		
 		if( IsFakeClient( client ) && !g_bCvar_BotTrigger ) return;
 		
